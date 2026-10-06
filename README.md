@@ -2,7 +2,6 @@
 
 [![githubb]][github]
 [![codecovb]][codecov]
-[![goreportb]][goreport]
 [![godocb]][godoc]
 [![licenseb]][license]
 [![versionb]][version]
@@ -167,8 +166,6 @@ The benchmark results shown in the table are provided for informational purposes
 
 [codecov]: https://codecov.io/gh/asp24/decimal
 [codecovb]: https://img.shields.io/codecov/c/github/asp24/decimal/main?color=brightcolor
-[goreport]: https://goreportcard.com/report/github.com/asp24/decimal
-[goreportb]: https://goreportcard.com/badge/github.com/asp24/decimal
 [github]: https://github.com/asp24/decimal/actions/workflows/go.yml
 [githubb]: https://img.shields.io/github/actions/workflow/status/asp24/decimal/go.yml
 [godoc]: https://pkg.go.dev/github.com/asp24/decimal#section-documentation
