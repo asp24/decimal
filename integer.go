@@ -3,6 +3,7 @@ package decimal
 import (
 	"fmt"
 	"math/big"
+	"math/bits"
 	"sync"
 )
 
@@ -227,6 +228,18 @@ func (x fint) hasPrec(prec int) bool {
 	}
 	// General case
 	return x >= pow10[prec-1]
+}
+
+// mulPow10 calculates x * 10^n as a 128-bit integer.
+// The result must not exceed 2^128 - 1, otherwise it is undefined.
+func mulPow10(x uint64, n int) (hi, lo uint64) {
+	if n <= MaxPrec {
+		return bits.Mul64(x, uint64(pow10[n]))
+	}
+	hi, lo = bits.Mul64(x, uint64(pow10[MaxPrec]))
+	p := uint64(pow10[n-MaxPrec])
+	carry, lo := bits.Mul64(lo, p)
+	return hi*p + carry, lo
 }
 
 // bint (Big INTeger) is a wrapper around big.Int.

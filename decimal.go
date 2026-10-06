@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/bits"
 	"strconv"
 	"unicode/utf8"
 	"unsafe"
@@ -3200,37 +3201,49 @@ func (d Decimal) QuoExact(e Decimal, scale int) (Decimal, error) {
 	return f, nil
 }
 
-// quoFint computes the quotient of two decimals using uint64 arithmetic.
+// quoFint computes the quotient of two decimals using 128-bit arithmetic.
+// The quotient is computed as ⌊d * 10^k / e⌋, where k is chosen so that
+// the quotient has 19 digits but its scale does not exceed [MaxScale],
+// and then rounded half to even using the remainder.
 func (d Decimal) quoFint(e Decimal, minScale int) (Decimal, error) {
-	dcoef := d.coef
-	dscale := d.Scale()
-	dneg := d.IsNeg()
-
-	ecoef := e.coef
+	dcoef := uint64(d.coef)
+	ecoef := uint64(e.coef)
+	if ecoef == 0 {
+		return Decimal{}, errDivisionByZero
+	}
 
 	// Alignment
-	var ok bool
-	if shift := MaxPrec - dcoef.prec(); shift > 0 {
-		dcoef, ok = dcoef.lsh(shift)
-		if !ok {
-			return Decimal{}, errDecimalOverflow // Should never happen
-		}
-		dscale = dscale + shift
-	}
-	if shift := ecoef.ntz(); shift > 0 {
-		ecoef = ecoef.rshDown(shift)
-		dscale = dscale + shift
+	k := min(MaxPrec-d.coef.prec()+e.coef.prec(), MaxScale-d.Scale()+e.Scale())
+	hi, lo := mulPow10(dcoef, k)
+	// The quotient is less than 10^20, it must be less than 10^19.
+	if ehi, elo := bits.Mul64(ecoef, uint64(pow10[MaxPrec])); hi > ehi || hi == ehi && lo >= elo {
+		k--
+		hi, lo = mulPow10(dcoef, k)
 	}
 
-	// Compute d = d / e
-	dcoef, ok = dcoef.quo(ecoef)
-	if !ok {
+	// Compute q = ⌊d / e⌋, r = d - q * e
+	q, r := bits.Div64(hi, lo, ecoef)
+	scale := d.Scale() - e.Scale() + k
+	neg := d.IsNeg() != e.IsNeg()
+
+	// Exact quotient
+	if r == 0 {
+		return newFromFint(neg, fint(q), scale, minScale)
+	}
+
+	// Inexact quotient must not lose any of the digits required by minScale
+	if scale < minScale {
 		return Decimal{}, errInexactDivision
 	}
-	dscale = dscale - e.Scale()
-	dneg = dneg != e.IsNeg()
 
-	return newFromFint(dneg, dcoef, dscale, minScale)
+	// Rounding half to even.
+	// An inexact quotient never rounds up to 10^19, but even if it did,
+	// newFromFint would return an error and the caller would fall back to quoBint.
+	if r > ecoef-r || r == ecoef-r && q&1 == 1 {
+		q++
+	}
+
+	return newFromFint(neg, fint(q), scale, minScale)
 }
 
 // quoBint computes the quotient of two decimals using *big.Int arithmetic.
