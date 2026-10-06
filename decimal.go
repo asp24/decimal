@@ -2500,10 +2500,7 @@ func (d Decimal) expm1Bint() (Decimal, error) {
 	}
 
 	// Compute e = e - 1
-	eneg := false
-	if ecoef.cmp(bpow10[bscale]) < 0 {
-		eneg = true
-	}
+	eneg := ecoef.cmp(bpow10[bscale]) < 0
 	ecoef.subAbs(ecoef, bpow10[bscale])
 
 	return newFromBint(eneg, ecoef, bscale, 0)

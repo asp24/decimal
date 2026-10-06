@@ -5,6 +5,7 @@
 ### Changed
 
 - Bumped go version to 1.27.
+- Migrated linter configuration to golangci-lint v2.
 
 ### Fixed
 
