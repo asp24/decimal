@@ -143,7 +143,7 @@ func New(value int64, scale int) (Decimal, error) {
 	// The absolute value of any int64, including math.MinInt64,
 	// fits into fint and does not exceed maxCoef.
 	neg := value < 0
-	coef := fint(value)
+	coef := fint(value) //nolint:gosec
 	if neg {
 		coef = -coef
 	}
