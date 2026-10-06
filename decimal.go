@@ -608,7 +608,9 @@ func parseBint(text []byte, minScale int) (Decimal, error) {
 //
 // [fmt.Stringer]: https://pkg.go.dev/fmt#Stringer
 func (d Decimal) String() string {
-	return string(d.bytes())
+	var buf [24]byte
+	pos := d.format(&buf)
+	return string(buf[pos:])
 }
 
 // bytes returns a string representation of the decimal as a byte slice.
@@ -620,41 +622,94 @@ func (d Decimal) bytes() []byte {
 // append appends a string representation of the decimal to the byte slice.
 func (d Decimal) append(text []byte) []byte {
 	var buf [24]byte
-	pos := len(buf) - 1
-	coef := d.Coef()
-	scale := d.Scale()
+	pos := d.format(&buf)
+	return append(text, buf[pos:]...)
+}
 
-	// Coefficient
-	for {
-		buf[pos] = byte(coef%10) + '0'
+// format writes a string representation of the decimal to the end of buf
+// and returns the position of its first byte.
+func (d Decimal) format(buf *[24]byte) int {
+	pos := len(buf)
+	coef := uint64(d.coef)
+
+	// Coefficient, 8 digits at a time.
+	// Each group uses only 32-bit arithmetic, and its 4 pairs of digits
+	// are computed independently of each other.
+	for coef >= 1e8 {
+		x76543210 := uint32(coef % 1e8)
+		coef /= 1e8
+		x7654, x3210 := x76543210/1e4, x76543210%1e4
+		x76, x54 := (x7654/100)*2, (x7654%100)*2
+		x32, x10 := (x3210/100)*2, (x3210%100)*2
+		pos -= 8
+		b := buf[pos : pos+8]
+		b[7], b[6] = digitPairs[x10+1], digitPairs[x10]
+		b[5], b[4] = digitPairs[x32+1], digitPairs[x32]
+		b[3], b[2] = digitPairs[x54+1], digitPairs[x54]
+		b[1], b[0] = digitPairs[x76+1], digitPairs[x76]
+	}
+
+	// Coefficient, remaining digits 2 at a time
+	x := uint32(coef)
+	for x >= 100 {
+		x10 := (x % 100) * 2
+		x /= 100
+		pos -= 2
+		b := buf[pos : pos+2]
+		b[1], b[0] = digitPairs[x10+1], digitPairs[x10]
+	}
+	if x >= 10 {
+		x10 := x * 2
+		pos -= 2
+		b := buf[pos : pos+2]
+		b[1], b[0] = digitPairs[x10+1], digitPairs[x10]
+	} else {
 		pos--
-		coef /= 10
-		if scale > 0 {
-			scale--
-			// Decimal point
-			if scale == 0 {
-				buf[pos] = '.'
+		buf[pos] = byte(x) + '0'
+	}
+
+	// Decimal point
+	if scale := d.Scale(); scale > 0 {
+		dot := len(buf) - scale - 1
+		if pos > dot {
+			// No integer digits, add leading zeros
+			for pos > dot+1 {
 				pos--
-				// Leading 0
-				if coef == 0 {
-					buf[pos] = '0'
-					pos--
-				}
+				buf[pos] = '0'
 			}
-		}
-		if coef == 0 && scale == 0 {
-			break
+			buf[dot], buf[dot-1] = '.', '0'
+			pos = dot - 1
+		} else {
+			// Shift integer digits to make room for the decimal point
+			pos--
+			b := buf[pos : dot+1]
+			for i := 1; i < len(b); i++ {
+				b[i-1] = b[i]
+			}
+			b[len(b)-1] = '.'
 		}
 	}
 
 	// Sign
 	if d.IsNeg() {
-		buf[pos] = '-'
 		pos--
+		buf[pos] = '-'
 	}
 
-	return append(text, buf[pos+1:]...)
+	return pos
 }
+
+// digitPairs contains decimal representations of numbers 00 to 99 concatenated.
+const digitPairs = "00010203040506070809" +
+	"10111213141516171819" +
+	"20212223242526272829" +
+	"30313233343536373839" +
+	"40414243444546474849" +
+	"50515253545556575859" +
+	"60616263646566676869" +
+	"70717273747576777879" +
+	"80818283848586878889" +
+	"90919293949596979899"
 
 // UnmarshalJSON implements the [json.Unmarshaler] interface.
 // UnmarshalJSON supports the following types: [number] and [numeric string].
