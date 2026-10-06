@@ -1785,6 +1785,7 @@ func TestDecimal_Format(t *testing.T) {
 		{"12.34", "%G", "%!G(decimal.Decimal=12.34)"},
 		{"12.34", "%x", "%!x(decimal.Decimal=12.34)"},
 		{"12.34", "%X", "%!X(decimal.Decimal=12.34)"},
+		{"12.34", "%ж", "%!ж(decimal.Decimal=12.34)"},
 
 		// Errors
 		{"9999999999999999999", "%k", "%!k(PANIC=Format method: formatting percent: computing [9999999999999999999 * 100]: decimal overflow: the integer part of a decimal.Decimal can have at most 19 digits, but it has 21 digits)"},

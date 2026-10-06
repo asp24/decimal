@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- `Decimal.Format` corrupted non-ASCII verbs in the `%!verb(decimal.Decimal=...)` error output.
+
 ## [0.1.36] - 2025-01-19
 
 ### Added

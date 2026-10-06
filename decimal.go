@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"unicode/utf8"
 	"unsafe"
 )
 
@@ -1227,7 +1228,7 @@ func (d Decimal) Format(state fmt.State, verb rune) {
 		state.Write(buf)
 	default:
 		state.Write([]byte("%!"))
-		state.Write([]byte{byte(verb)})
+		state.Write(utf8.AppendRune(nil, verb))
 		state.Write([]byte("(decimal.Decimal="))
 		state.Write(buf)
 		state.Write([]byte(")"))
