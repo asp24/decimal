@@ -2,6 +2,7 @@ package decimal
 
 import (
 	"database/sql/driver"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"math"
@@ -746,6 +747,20 @@ func (d Decimal) MarshalJSON() ([]byte, error) {
 	text = d.append(text)
 	text = append(text, '"')
 	return text, nil
+}
+
+// MarshalJSONTo implements the [json.MarshalerTo] interface.
+// MarshalJSONTo always writes a [numeric string].
+// See also method [Decimal.MarshalJSON].
+//
+// [numeric string]: https://datatracker.ietf.org/doc/html/rfc8259#section-7
+// [json.MarshalerTo]: https://pkg.go.dev/encoding/json/v2#MarshalerTo
+func (d Decimal) MarshalJSONTo(enc *jsontext.Encoder) error {
+	text := enc.AvailableBuffer()
+	text = append(text, '"')
+	text = d.append(text)
+	text = append(text, '"')
+	return enc.WriteValue(text)
 }
 
 // UnmarshalText implements the [encoding.TextUnmarshaler] interface.
@@ -3592,6 +3607,17 @@ func (n NullDecimal) MarshalJSON() ([]byte, error) {
 		return []byte("null"), nil
 	}
 	return n.Decimal.MarshalJSON()
+}
+
+// MarshalJSONTo implements the [json.MarshalerTo] interface.
+// See also method [Decimal.MarshalJSONTo].
+//
+// [json.MarshalerTo]: https://pkg.go.dev/encoding/json/v2#MarshalerTo
+func (n NullDecimal) MarshalJSONTo(enc *jsontext.Encoder) error {
+	if !n.Valid {
+		return enc.WriteToken(jsontext.Null)
+	}
+	return n.Decimal.MarshalJSONTo(enc)
 }
 
 // UnmarshalBSONValue implements the [v2/bson.ValueUnmarshaler] interface.

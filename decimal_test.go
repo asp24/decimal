@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"encoding"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"fmt"
 	"math"
 	"math/big"
@@ -48,6 +49,10 @@ func TestDecimal_Interfaces(t *testing.T) {
 	_, ok = d.(json.Marshaler)
 	if !ok {
 		t.Errorf("%T does not implement json.Marshaler", d)
+	}
+	_, ok = d.(jsonv2.MarshalerTo)
+	if !ok {
+		t.Errorf("%T does not implement json.MarshalerTo", d)
 	}
 	_, ok = d.(encoding.TextMarshaler)
 	if !ok {
@@ -578,6 +583,74 @@ func TestDecimalUnmarshalJSON(t *testing.T) {
 			t.Errorf("UnmarshalJSON(\"-1.1.1\") did not fail")
 		}
 	})
+}
+
+func TestDecimal_MarshalJSONTo(t *testing.T) {
+	tests := []struct {
+		d    string
+		want string
+	}{
+		{"0", `"0"`},
+		{"0.00", `"0.00"`},
+		{"-5.67", `"-5.67"`},
+		{"9999999999999999999", `"9999999999999999999"`},
+		{"-0.0000000000000000001", `"-0.0000000000000000001"`},
+	}
+	for _, tt := range tests {
+		d := MustParse(tt.d)
+
+		got, err := jsonv2.Marshal(d)
+		if err != nil {
+			t.Errorf("json/v2.Marshal(%q) failed: %v", d, err)
+			continue
+		}
+		if string(got) != tt.want {
+			t.Errorf("json/v2.Marshal(%q) = %s, want %s", d, got, tt.want)
+		}
+
+		got, err = json.Marshal(d)
+		if err != nil {
+			t.Errorf("json.Marshal(%q) failed: %v", d, err)
+			continue
+		}
+		if string(got) != tt.want {
+			t.Errorf("json.Marshal(%q) = %s, want %s", d, got, tt.want)
+		}
+	}
+}
+
+func TestNullDecimal_MarshalJSONTo(t *testing.T) {
+	type account struct {
+		Balance NullDecimal `json:"balance"`
+	}
+	tests := []struct {
+		n    NullDecimal
+		want string
+	}{
+		{NullDecimal{}, `{"balance":null}`},
+		{NullDecimal{Decimal: MustParse("5.67"), Valid: false}, `{"balance":null}`},
+		{NullDecimal{Decimal: MustParse("0"), Valid: true}, `{"balance":"0"}`},
+		{NullDecimal{Decimal: MustParse("-5.67"), Valid: true}, `{"balance":"-5.67"}`},
+	}
+	for _, tt := range tests {
+		got, err := jsonv2.Marshal(account{Balance: tt.n})
+		if err != nil {
+			t.Errorf("json/v2.Marshal(%v) failed: %v", tt.n, err)
+			continue
+		}
+		if string(got) != tt.want {
+			t.Errorf("json/v2.Marshal(%v) = %s, want %s", tt.n, got, tt.want)
+		}
+
+		got, err = json.Marshal(account{Balance: tt.n})
+		if err != nil {
+			t.Errorf("json.Marshal(%v) failed: %v", tt.n, err)
+			continue
+		}
+		if string(got) != tt.want {
+			t.Errorf("json.Marshal(%v) = %s, want %s", tt.n, got, tt.want)
+		}
+	}
 }
 
 func TestDecimalUnmarshalBSONValue(t *testing.T) {
@@ -6330,11 +6403,23 @@ func TestNullDecimal_Interfaces(t *testing.T) {
 	if !ok {
 		t.Errorf("%T does not implement driver.Valuer", n)
 	}
+	_, ok = n.(json.Marshaler)
+	if !ok {
+		t.Errorf("%T does not implement json.Marshaler", n)
+	}
+	_, ok = n.(jsonv2.MarshalerTo)
+	if !ok {
+		t.Errorf("%T does not implement json.MarshalerTo", n)
+	}
 
 	n = &NullDecimal{}
 	_, ok = n.(sql.Scanner)
 	if !ok {
 		t.Errorf("%T does not implement sql.Scanner", n)
+	}
+	_, ok = n.(json.Unmarshaler)
+	if !ok {
+		t.Errorf("%T does not implement json.Unmarshaler", n)
 	}
 }
 
@@ -6541,6 +6626,26 @@ func FuzzDecimal_String(f *testing.F) {
 			}
 			if string(text) != "prefix"+want {
 				t.Errorf("AppendText(\"prefix\") = %q, want %q", text, "prefix"+want)
+				return
+			}
+
+			data, err := jsonv2.Marshal(d)
+			if err != nil {
+				t.Errorf("json/v2.Marshal() failed: %v", err)
+				return
+			}
+			if string(data) != `"`+want+`"` {
+				t.Errorf("json/v2.Marshal() = %s, want %q", data, want)
+				return
+			}
+			var got2 Decimal
+			err = jsonv2.Unmarshal(data, &got2)
+			if err != nil {
+				t.Errorf("json/v2.Unmarshal(%s) failed: %v", data, err)
+				return
+			}
+			if got2.CmpTotal(d) != 0 {
+				t.Errorf("json/v2.Unmarshal(%s) = %v, want %v", data, got2, d)
 				return
 			}
 		},

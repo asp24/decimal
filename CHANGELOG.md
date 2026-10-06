@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Implemented `Decimal.MarshalJSONTo`, `NullDecimal.MarshalJSONTo` (`encoding/json/v2`).
+
 ### Changed
 
 - Bumped go version to 1.27.

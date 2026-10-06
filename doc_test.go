@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"encoding/xml"
 	"fmt"
 	"slices"
@@ -417,6 +418,14 @@ func marshalJSON(s string) (string, error) {
 		return "", err
 	}
 	return string(data), nil
+}
+
+func ExampleDecimal_MarshalJSONTo_json() {
+	d := decimal.MustParse("5.67")
+	data, err := jsonv2.Marshal(Account{Balance: d})
+	fmt.Println(string(data), err)
+	// Output:
+	// {"balance":"5.67"} <nil>
 }
 
 type Transaction struct {
@@ -1443,6 +1452,24 @@ func ExampleNullDecimal_MarshalJSON_json() {
 		Valid:   true,
 	}
 	data, _ = json.Marshal(m)
+	fmt.Println(string(data))
+	// Output:
+	// null
+	// "5.67"
+}
+
+func ExampleNullDecimal_MarshalJSONTo_json() {
+	n := decimal.NullDecimal{
+		Valid: false,
+	}
+	data, _ := jsonv2.Marshal(n)
+	fmt.Println(string(data))
+
+	m := decimal.NullDecimal{
+		Decimal: decimal.MustParse("5.67"),
+		Valid:   true,
+	}
+	data, _ = jsonv2.Marshal(m)
 	fmt.Println(string(data))
 	// Output:
 	// null
