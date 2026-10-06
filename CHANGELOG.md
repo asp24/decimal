@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.0] - 2026-10-06
 
 ### Added
 
@@ -20,6 +20,7 @@
 - Improved performance of `Decimal.Add`, `Decimal.Sub`, `Decimal.Mul` (about 2.5 times faster),
   `Decimal.Quo`, `Decimal.Trim` (about 2 times faster), `New`, `Parse` and `Decimal.String`
   for small integers.
+- Improved performance of `Decimal.Float64` for coefficients up to 2^53.
 
 ### Fixed
 
