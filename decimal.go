@@ -2,10 +2,12 @@ package decimal
 
 import (
 	"database/sql/driver"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"math"
 	"strconv"
+	"unicode/utf8"
 	"unsafe"
 )
 
@@ -747,6 +749,20 @@ func (d Decimal) MarshalJSON() ([]byte, error) {
 	return text, nil
 }
 
+// MarshalJSONTo implements the [json.MarshalerTo] interface.
+// MarshalJSONTo always writes a [numeric string].
+// See also method [Decimal.MarshalJSON].
+//
+// [numeric string]: https://datatracker.ietf.org/doc/html/rfc8259#section-7
+// [json.MarshalerTo]: https://pkg.go.dev/encoding/json/v2#MarshalerTo
+func (d Decimal) MarshalJSONTo(enc *jsontext.Encoder) error {
+	text := enc.AvailableBuffer()
+	text = append(text, '"')
+	text = d.append(text)
+	text = append(text, '"')
+	return enc.WriteValue(text)
+}
+
 // UnmarshalText implements the [encoding.TextUnmarshaler] interface.
 // UnmarshalText supports only numeric strings.
 // See also constructor [Parse].
@@ -1227,7 +1243,7 @@ func (d Decimal) Format(state fmt.State, verb rune) {
 		state.Write(buf)
 	default:
 		state.Write([]byte("%!"))
-		state.Write([]byte{byte(verb)})
+		state.Write(utf8.AppendRune(nil, verb))
 		state.Write([]byte("(decimal.Decimal="))
 		state.Write(buf)
 		state.Write([]byte(")"))
@@ -2499,10 +2515,7 @@ func (d Decimal) expm1Bint() (Decimal, error) {
 	}
 
 	// Compute e = e - 1
-	eneg := false
-	if ecoef.cmp(bpow10[bscale]) < 0 {
-		eneg = true
-	}
+	eneg := ecoef.cmp(bpow10[bscale]) < 0
 	ecoef.subAbs(ecoef, bpow10[bscale])
 
 	return newFromBint(eneg, ecoef, bscale, 0)
@@ -3594,6 +3607,17 @@ func (n NullDecimal) MarshalJSON() ([]byte, error) {
 		return []byte("null"), nil
 	}
 	return n.Decimal.MarshalJSON()
+}
+
+// MarshalJSONTo implements the [json.MarshalerTo] interface.
+// See also method [Decimal.MarshalJSONTo].
+//
+// [json.MarshalerTo]: https://pkg.go.dev/encoding/json/v2#MarshalerTo
+func (n NullDecimal) MarshalJSONTo(enc *jsontext.Encoder) error {
+	if !n.Valid {
+		return enc.WriteToken(jsontext.Null)
+	}
+	return n.Decimal.MarshalJSONTo(enc)
 }
 
 // UnmarshalBSONValue implements the [v2/bson.ValueUnmarshaler] interface.

@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Implemented `Decimal.MarshalJSONTo`, `NullDecimal.MarshalJSONTo` (`encoding/json/v2`).
+
+### Changed
+
+- Changed module path to `github.com/asp24/decimal`.
+- Bumped go version to 1.27.
+- Migrated linter configuration to golangci-lint v2.
+
+### Fixed
+
+- `Decimal.Format` corrupted non-ASCII verbs in the `%!verb(decimal.Decimal=...)` error output.
+
 ## [0.1.36] - 2025-01-19
 
 ### Added
