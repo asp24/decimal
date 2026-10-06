@@ -2965,44 +2965,6 @@ func ParseExact(s string, scale int) (Decimal, error) {
 	return parseExact(text, scale)
 }
 
-// NewFromFloat64 converts a float to a (possibly rounded) decimal.
-// See also method [Decimal.Float64].
-//
-// NewFromFloat64 returns an error if:
-//   - the float is a special value (NaN or Inf);
-//   - the integer part of the result has more than [MaxPrec] digits.
-func NewFromFloat64(f float64) (Decimal, error) {
-	// Float
-	if math.IsNaN(f) || math.IsInf(f, 0) {
-		return Decimal{}, fmt.Errorf("converting float: special value %v", f)
-	}
-	text := make([]byte, 0, 32)
-	text = strconv.AppendFloat(text, f, 'f', -1, 64)
-
-	// Decimal
-	d, err := parse(text)
-	if err != nil {
-		return Decimal{}, fmt.Errorf("converting float: %w", err)
-	}
-	return d, nil
-}
-
-// Float64 returns the nearest binary floating-point number rounded
-// using [rounding half to even] (banker's rounding).
-// See also constructor [NewFromFloat64].
-//
-// This conversion may lose data, as float64 has a smaller precision
-// than the decimal type.
-//
-// [rounding half to even]: https://en.wikipedia.org/wiki/Rounding#Rounding_half_to_even
-func (d Decimal) Float64() (f float64, ok bool) {
-	f = float64(d.coef) / float64(pow10[d.scale])
-	if d.neg {
-		f = -f
-	}
-	return f, true
-}
-
 // digitPairs contains decimal representations of numbers 00 to 99 concatenated.
 const digitPairs = "00010203040506070809" +
 	"10111213141516171819" +
@@ -3319,6 +3281,55 @@ func (d Decimal) Format(state fmt.State, verb rune) {
 		state.Write(buf)
 		state.Write([]byte(")"))
 	}
+}
+
+// NewFromFloat64 converts a float to a (possibly rounded) decimal.
+// See also method [Decimal.Float64].
+//
+// NewFromFloat64 returns an error if:
+//   - the float is a special value (NaN or Inf);
+//   - the integer part of the result has more than [MaxPrec] digits.
+func NewFromFloat64(f float64) (Decimal, error) {
+	// Float
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return Decimal{}, fmt.Errorf("converting float: special value %v", f)
+	}
+	text := make([]byte, 0, 32)
+	text = strconv.AppendFloat(text, f, 'f', -1, 64)
+
+	// Decimal
+	d, err := parse(text)
+	if err != nil {
+		return Decimal{}, fmt.Errorf("converting float: %w", err)
+	}
+	return d, nil
+}
+
+// Float64 returns the nearest binary floating-point number rounded
+// using [rounding half to even] (banker's rounding).
+// See also constructor [NewFromFloat64].
+//
+// This conversion may lose data, as float64 has a smaller precision
+// than the decimal type.
+//
+// [rounding half to even]: https://en.wikipedia.org/wiki/Rounding#Rounding_half_to_even
+func (d Decimal) Float64() (f float64, ok bool) {
+	// Fast path: the coefficient and the power of ten are exactly representable
+	// as float64, so their quotient is correctly rounded.
+	if d.coef <= 1<<53 {
+		f = float64(d.coef) / float64(pow10[d.scale])
+		if d.neg {
+			f = -f
+		}
+		return f, true
+	}
+	var buf [24]byte
+	pos := d.format(&buf)
+	f, err := strconv.ParseFloat(string(buf[pos:]), 64)
+	if err != nil {
+		return 0, false // Should never happen
+	}
+	return f, true
 }
 
 // UnmarshalJSON implements the [json.Unmarshaler] interface.
