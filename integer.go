@@ -49,17 +49,11 @@ func (x fint) add(y fint) (z fint, ok bool) {
 
 // mul calculates x * y and checks overflow.
 func (x fint) mul(y fint) (z fint, ok bool) {
-	if y == 0 {
-		return 0, true
-	}
-	z = x * y
-	if z/y != x {
+	hi, lo := bits.Mul64(uint64(x), uint64(y))
+	if hi != 0 || lo > maxFint {
 		return 0, false
 	}
-	if z > maxFint {
-		return 0, false
-	}
-	return z, true
+	return fint(lo), true
 }
 
 // quo calculates x / y and checks division by zero and inexact division.
@@ -188,31 +182,64 @@ func (x fint) rshDown(shift int) fint {
 // prec returns length of x in decimal digits.
 // prec assumes that 0 has no digits.
 func (x fint) prec() int {
-	left, right := 0, len(pow10)
-	for left < right {
-		mid := (left + right) / 2
-		if x < pow10[mid] {
-			right = mid
-		} else {
-			left = mid + 1
-		}
+	// 1233 / 4096 is an approximation of log10(2) from below,
+	// so p is either the length of x or one less than it.
+	p := bits.Len64(uint64(x)) * 1233 >> 12
+	if x >= pow10[p] {
+		p++
 	}
-	return left
+	return p
 }
 
 // ntz returns number of trailing zeros in x.
 // ntz assumes that 0 has no trailing zeros.
 func (x fint) ntz() int {
-	left, right := 1, x.prec()
-	for left < right {
-		mid := (left + right) / 2
-		if x%pow10[mid] == 0 {
-			left = mid + 1
-		} else {
-			right = mid
-		}
+	if x == 0 {
+		return 0
 	}
-	return left - 1
+	_, n := x.trimZeros(len(pow10))
+	return n
+}
+
+// trimZeros removes at most limit trailing zeros from x and
+// returns the result together with the number of removed zeros.
+// Since x has at most 19 trailing zeros, the zeros are removed in groups
+// of 16, 8, 4, 2 and 1.
+func (x fint) trimZeros(limit int) (z fint, n int) {
+	if limit >= 16 {
+		x, n = x.rshExact(16, 0xe4a4d1417cd9a041, 1_844, n)
+	}
+	if limit-n >= 8 {
+		x, n = x.rshExact(8, 0xc767074b22e90e21, 184_467_440_737, n)
+	}
+	if limit-n >= 4 {
+		x, n = x.rshExact(4, 0xd288ce703afb7e91, 1_844_674_407_370_955, n)
+	}
+	if limit-n >= 2 {
+		x, n = x.rshExact(2, 0x8f5c28f5c28f5c29, 184_467_440_737_095_516, n)
+	}
+	if limit-n >= 1 {
+		x, n = x.rshExact(1, 0xcccccccccccccccd, 1_844_674_407_370_955_161, n)
+	}
+	return x, n
+}
+
+// rshExact calculates x / 10^shift and adds shift to n if x is a multiple
+// of 10^shift, otherwise it returns x and n unchanged.
+// inv must be the multiplicative inverse of 5^shift modulo 2^64,
+// and bound must be equal to ⌊(2^64 - 1) / 10^shift⌋.
+//
+// If x = 10^shift * y, then x * inv = 2^shift * y (mod 2^64), and rotating
+// it right by shift bits gives y, which does not exceed bound.
+// Conversely, if the rotated value r does not exceed this bound,
+// then x = r * 10^shift (mod 2^64), and since both sides are less
+// than 2^64, x is a multiple of 10^shift.
+func (x fint) rshExact(shift int, inv, bound uint64, n int) (fint, int) {
+	r := bits.RotateLeft64(uint64(x)*inv, -shift)
+	if r <= bound {
+		return fint(r), n + shift
+	}
+	return x, n
 }
 
 // hasPrec returns true if x has given number of digits or more.

@@ -17,6 +17,9 @@
   (about 5–10 times faster) and `Decimal.Pow` (about 25 times faster).
   Square roots, inexact quotients, logarithms and exponentials no longer allocate
   or allocate much less.
+- Improved performance of `Decimal.Add`, `Decimal.Sub`, `Decimal.Mul` (about 2.5 times faster),
+  `Decimal.Quo`, `Decimal.Trim` (about 2 times faster), `New`, `Parse` and `Decimal.String`
+  for small integers.
 
 ### Fixed
 
