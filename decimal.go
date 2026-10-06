@@ -146,20 +146,17 @@ func MustNew(value int64, scale int) Decimal {
 //
 // New returns an error if the scale is negative or greater than [MaxScale].
 func New(value int64, scale int) (Decimal, error) {
-	var coef fint
-	var neg bool
-	if value >= 0 {
-		neg = false
-		coef = fint(value)
-	} else {
-		neg = true
-		if value == math.MinInt64 {
-			coef = fint(math.MaxInt64) + 1
-		} else {
-			coef = fint(-value)
-		}
+	if scale < MinScale || scale > MaxScale {
+		return Decimal{}, errScaleRange
 	}
-	return newSafe(neg, coef, scale)
+	// The absolute value of any int64, including math.MinInt64,
+	// fits into fint and does not exceed maxCoef.
+	neg := value < 0
+	coef := fint(value)
+	if neg {
+		coef = -coef
+	}
+	return newUnsafe(neg, coef, scale), nil
 }
 
 // NewFromInt64 converts a pair of integers, representing the whole and
@@ -435,6 +432,9 @@ func parseFint(text []byte, minScale int) (Decimal, error) {
 		return Decimal{}, errInvalidDecimal
 	case prec > MaxPrec:
 		return Decimal{}, errDecimalOverflow
+	case minScale <= scale && MinScale <= scale && scale <= MaxScale:
+		// Fast path: the coefficient has at most MaxPrec digits and needs no rescaling
+		return newUnsafe(neg, coef, scale), nil
 	}
 	return newFromFint(neg, coef, scale, minScale)
 }
@@ -612,6 +612,14 @@ func parseBint(text []byte, minScale int) (Decimal, error) {
 //
 // [fmt.Stringer]: https://pkg.go.dev/fmt#Stringer
 func (d Decimal) String() string {
+	// Fast path: small non-negative integers are substrings of digitPairs
+	if d.coef < 100 && d.scale == 0 && !d.neg {
+		end := int(d.coef)*2 + 2
+		if d.coef < 10 {
+			return digitPairs[end-1 : end]
+		}
+		return digitPairs[end-2 : end]
+	}
 	var buf [24]byte
 	pos := d.format(&buf)
 	return string(buf[pos:])
@@ -1410,8 +1418,9 @@ func (d Decimal) Trim(scale int) Decimal {
 	if d.Scale() <= scale {
 		return d
 	}
-	scale = max(scale, d.MinScale())
-	return d.Trunc(scale)
+	scale = max(scale, MinScale)
+	coef, n := d.coef.trimZeros(d.Scale() - scale)
+	return newUnsafe(d.IsNeg(), coef, d.Scale()-n)
 }
 
 // Ceil returns a decimal rounded up to the given number of digits
@@ -1752,6 +1761,12 @@ func meanBint(d ...Decimal) (Decimal, error) {
 // Mul returns an overflow error if the integer part of the result has
 // more than [MaxPrec] digits.
 func (d Decimal) Mul(e Decimal) (Decimal, error) {
+	// Fast path: the product needs no rounding
+	if scale := d.Scale() + e.Scale(); scale <= MaxScale {
+		if coef, ok := d.coef.mul(e.coef); ok {
+			return newUnsafe(d.neg != e.neg, coef, scale), nil
+		}
+	}
 	return d.MulExact(e, 0)
 }
 
@@ -2834,7 +2849,7 @@ func (d Decimal) SubAbs(e Decimal) (Decimal, error) {
 //
 // Sub returns an error if the integer part of the result has more than [MaxPrec] digits.
 func (d Decimal) Sub(e Decimal) (Decimal, error) {
-	return d.AddExact(e.Neg(), 0)
+	return d.Add(e.Neg())
 }
 
 // SubExact is similar to [Decimal.Sub], but it allows you to specify the number of digits
@@ -2850,6 +2865,12 @@ func (d Decimal) SubExact(e Decimal, scale int) (Decimal, error) {
 //
 // Add returns an error if the integer part of the result has more than [MaxPrec] digits.
 func (d Decimal) Add(e Decimal) (Decimal, error) {
+	// Fast path: equal scales and signs
+	if d.scale == e.scale && d.neg == e.neg {
+		if coef, ok := d.coef.add(e.coef); ok {
+			return newUnsafe(d.neg, coef, d.Scale()), nil
+		}
+	}
 	return d.AddExact(e, 0)
 }
 

@@ -6974,6 +6974,13 @@ func FuzzDecimal_Mul(f *testing.F) {
 				return
 			}
 
+			// Fast path of Mul must agree with the general case
+			fast, ferr := d.Mul(e)
+			slow, serr := d.MulExact(e, 0)
+			if (ferr == nil) != (serr == nil) || fast.CmpTotal(slow) != 0 {
+				t.Errorf("Mul(%q, %q) = %q, %v, whereas MulExact(%q, %q, 0) = %q, %v", d, e, fast, ferr, d, e, slow, serr)
+			}
+
 			got, err := d.mulFint(e, scale)
 			if err != nil {
 				t.Skip()
@@ -7314,6 +7321,21 @@ func FuzzDecimal_Add(f *testing.F) {
 			if err != nil {
 				t.Skip()
 				return
+			}
+
+			// Fast paths of Add and Sub must agree with the general case
+			for _, op := range []struct {
+				name       string
+				fast, slow func(d, e Decimal) (Decimal, error)
+			}{
+				{"Add", Decimal.Add, func(d, e Decimal) (Decimal, error) { return d.AddExact(e, 0) }},
+				{"Sub", Decimal.Sub, func(d, e Decimal) (Decimal, error) { return d.SubExact(e, 0) }},
+			} {
+				fast, ferr := op.fast(d, e)
+				slow, serr := op.slow(d, e)
+				if (ferr == nil) != (serr == nil) || fast.CmpTotal(slow) != 0 {
+					t.Errorf("%v(%q, %q) = %q, %v, whereas %vExact(%q, %q, 0) = %q, %v", op.name, d, e, fast, ferr, op.name, d, e, slow, serr)
+				}
 			}
 
 			got, err := d.addFint(e, scale)
