@@ -7380,6 +7380,38 @@ func FuzzDecimal_Cmp(f *testing.F) {
 	)
 }
 
+func FuzzDecimal_Sqrt(f *testing.F) {
+	for _, d := range corpus {
+		f.Add(d.scale, d.coef)
+	}
+
+	f.Fuzz(
+		func(t *testing.T, scale int, coef uint64) {
+			d, err := newSafe(false, fint(coef), scale)
+			if err != nil || d.IsZero() {
+				t.Skip()
+				return
+			}
+
+			got, err := d.sqrtFint()
+			if err != nil {
+				t.Skip()
+				return
+			}
+
+			want, err := d.sqrtBint()
+			if err != nil {
+				t.Errorf("sqrtBint(%q) failed: %v", d, err)
+				return
+			}
+
+			if got.CmpTotal(want) != 0 {
+				t.Errorf("sqrtBint(%q) = %q, whereas sqrtFint(%q) = %q", d, want, d, got)
+			}
+		},
+	)
+}
+
 func FuzzDecimal_Sqrt_PowInt(f *testing.F) {
 	for _, d := range corpus {
 		f.Add(d.neg, d.scale, d.coef)

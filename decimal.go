@@ -2100,15 +2100,46 @@ func (d Decimal) Sqrt() (Decimal, error) {
 	}
 
 	// General case
-	e, err := d.sqrtBint()
+	e, err := d.sqrtFint()
 	if err != nil {
-		return Decimal{}, fmt.Errorf("computing sqrt(%v): %w", d, err)
+		e, err = d.sqrtBint()
+		if err != nil {
+			return Decimal{}, fmt.Errorf("computing sqrt(%v): %w", d, err)
+		}
 	}
 
 	// Preferred scale
 	e = e.Trim(d.Scale() / 2)
 
 	return e, nil
+}
+
+// sqrtFint computes the square root of a decimal using 128-bit arithmetic.
+// The square root is computed as ⌊√(d * 10^m)⌋, where m is chosen so that
+// the root has 19 digits but its scale does not exceed [MaxScale],
+// and then rounded half to even using the remainder.
+func (d Decimal) sqrtFint() (Decimal, error) {
+	dcoef := uint64(d.coef)
+	dscale := d.Scale()
+
+	// Alignment
+	m := min(2*MaxPrec-d.coef.prec(), 2*MaxScale-dscale)
+	if (m+dscale)%2 != 0 {
+		m--
+	}
+	hi, lo := mulPow10(dcoef, m)
+
+	// Compute q = ⌊√d⌋, r = d - q²
+	q, rhi, rlo := isqrt128(hi, lo)
+
+	// Rounding half to even.
+	// The root of an integer is never exactly halfway between two integers,
+	// so it is rounded up if and only if r > q.
+	if rhi != 0 || rlo > q {
+		q++
+	}
+
+	return newFromFint(false, fint(q), (dscale+m)/2, 0)
 }
 
 // sqrtBint computes the square root of a decimal using *big.Int arithmetic.

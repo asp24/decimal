@@ -2,6 +2,7 @@ package decimal
 
 import (
 	"fmt"
+	"math"
 	"math/big"
 	"math/bits"
 	"sync"
@@ -240,6 +241,41 @@ func mulPow10(x uint64, n int) (hi, lo uint64) {
 	p := uint64(pow10[n-MaxPrec])
 	carry, lo := bits.Mul64(lo, p)
 	return hi*p + carry, lo
+}
+
+// isqrt128 calculates the integer square root q = ⌊√x⌋ and the remainder r = x - q²
+// of a 128-bit integer x.
+// x must be less than 10^38, otherwise the result is undefined.
+func isqrt128(xhi, xlo uint64) (q, rhi, rlo uint64) {
+	// Initial guess has 53 correct bits.
+	q = uint64(math.Sqrt(float64(xhi)*(1<<64) + float64(xlo)))
+
+	// One step of Newton's method doubles the number of correct bits.
+	if q != 0 {
+		t, _ := bits.Div64(xhi, xlo, q)
+		q = (q>>1 + t>>1) + (q & t & 1)
+	}
+
+	// Correction
+	for {
+		hi, lo := bits.Mul64(q, q)
+		if hi < xhi || hi == xhi && lo <= xlo {
+			break
+		}
+		q--
+	}
+	for {
+		hi, lo := bits.Mul64(q+1, q+1)
+		if hi > xhi || hi == xhi && lo > xlo {
+			break
+		}
+		q++
+	}
+
+	hi, lo := bits.Mul64(q, q)
+	rlo, borrow := bits.Sub64(xlo, lo, 0)
+	rhi, _ = bits.Sub64(xhi, hi, borrow)
+	return q, rhi, rlo
 }
 
 // bint (Big INTeger) is a wrapper around big.Int.
