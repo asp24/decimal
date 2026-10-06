@@ -13,8 +13,10 @@
 - Migrated linter configuration to golangci-lint v2.
 - Improved performance of `Decimal.Quo` for inexact quotients (about 10 times faster),
   `Decimal.Sqrt` (about 50 times faster), `Decimal.Log`, `Decimal.Log2`, `Decimal.Log10`,
-  `Decimal.Log1p` (about 30–60 times faster) and `Decimal.Pow` (about 5 times faster).
-  Square roots, inexact quotients and logarithms no longer allocate or allocate much less.
+  `Decimal.Log1p` (about 30–60 times faster), `Decimal.Exp`, `Decimal.Expm1`
+  (about 5–10 times faster) and `Decimal.Pow` (about 25 times faster).
+  Square roots, inexact quotients, logarithms and exponentials no longer allocate
+  or allocate much less.
 
 ### Fixed
 
