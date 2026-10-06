@@ -163,7 +163,7 @@ Median time per operation (lower is better, the best result is in bold):
 | PowInt    | 1.01^600              |     1.62µ | 3.94µ |    **1.20µ** |      3.35µ |           12.8µ |        21.9µ |           2.38µ |
 | PowInt    | 1.001^6000            | **2.90µ** | 8.22µ |        47.5µ |     107.0µ |          398.3µ |        21.3µ |           4.03µ |
 | Sqrt      | √2                    | **27.5n** | 1.21µ |            — |      44.6n |               — |        22.6µ |            832n |
-| Exp       | exp(0.5)              |     7.07µ | 16.5µ |    **5.19µ** |          — |           13.2µ |        12.2µ |           11.2µ |
+| Exp       | exp(0.5)              |  **451n** | 16.5µ |        5.19µ |          — |           13.2µ |        12.2µ |           11.2µ |
 | Log       | ln(0.5)               |  **767n** | 51.9µ |        34.2µ |          — |               — |         833n |           27.0µ |
 | Parse     | 1                     |      6.3n | 48.4n |        29.5n |       6.5n |        **3.4n** |        19.7n |           85.3n |
 | Parse     | 123.456               |      8.4n |  102n |        38.2n |       9.4n |        **5.8n** |        23.8n |            106n |
@@ -185,7 +185,7 @@ Heap allocations per operation:
 | PowInt    | 1.01^600              |      16 |    58 |           10 |         22 |              16 |            0 |              39 |
 | PowInt    | 1.001^6000            |      30 |   130 |           16 |         34 |              22 |            0 |              69 |
 | Sqrt      | √2                    |       0 |     9 |            — |          0 |               — |            0 |              12 |
-| Exp       | exp(0.5)              |      82 |   211 |          210 |          — |             281 |            0 |             130 |
+| Exp       | exp(0.5)              |       2 |   211 |          210 |          — |             281 |            0 |             130 |
 | Log       | ln(0.5)               |       4 |   773 |          690 |          — |               — |            0 |             381 |
 | Parse     | 1                     |       0 |     1 |            2 |          0 |               0 |            0 |               2 |
 | Parse     | 123.456               |       0 |     2 |            2 |          0 |               0 |            0 |               2 |
@@ -200,6 +200,8 @@ Every package computes inexact results with at least 19 significant digits
 every result is verified against a reference value before measuring.
 [shopspring] and [alpacadecimal] compute integer powers exactly, with all 61 digits of 1.1^60.
 [decimal128] computes integer powers as exp(y·ln(x)).
+The argument 0.5 of `Exp` is reduced exactly by the lookup tables of decimal;
+for arbitrary arguments its `Exp` takes about 1µs.
 
 The results were obtained with Go 1.27.1 on AMD Ryzen AI MAX+ 395, one physical core per benchmark.
 To reproduce them, run:

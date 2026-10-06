@@ -134,6 +134,9 @@ jobs:
       - name: Run fuzzing for power and integer power
         run: go test -fuzztime 20s -fuzz ^FuzzDecimal_Pow_PowInt$
 
+      - name: Run fuzzing for exponential
+        run: go test -fuzztime 20s -fuzz ^FuzzDecimal_Exp$
+
       - name: Run fuzzing for exponential and power
         run: go test -fuzztime 20s -fuzz ^FuzzDecimal_Pow_Exp$
 
@@ -141,7 +144,7 @@ jobs:
         run: go test -fuzztime 20s -fuzz ^FuzzDecimal_Log$
 
       - name: Run fuzzing for exponential and logarithm
-        run: go test -fuzztime 20s -fuzz ^FuzzDecimalp_Log_Exp$
+        run: go test -fuzztime 20s -fuzz ^FuzzDecimal_Log_Exp$
 
       - name: Run fuzzing for shifted exponential and exponential
         run: go test -fuzztime 20s -fuzz ^FuzzDecimal_Expm1_Exp$

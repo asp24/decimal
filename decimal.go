@@ -1909,12 +1909,10 @@ func (d Decimal) powBint(e Decimal) (Decimal, error) {
 	}
 
 	// Compute f = exp(f)
-	fcoef.exp(fcoef)
-
 	if inv {
-		// Compute f = ⌊1 / f⌋
-		fcoef.quo(bpow10[2*bscale], fcoef)
+		fcoef.neg(fcoef)
 	}
+	fcoef.exp(fcoef)
 
 	return newFromBint(false, fcoef, bscale, 0)
 }
@@ -2550,17 +2548,12 @@ func (d Decimal) expBint() (Decimal, error) {
 
 	// Alignment
 	dcoef.lsh(dcoef, bscale-d.Scale())
+	if d.IsNeg() {
+		dcoef.neg(dcoef)
+	}
 
 	// Compute e = exp(d)
 	ecoef.exp(dcoef)
-
-	if d.IsNeg() {
-		if ecoef.sign() == 0 {
-			return Decimal{}, unknownOverflowError()
-		}
-		// Compute e = ⌊1 / e⌋
-		ecoef.quo(bpow10[2*bscale], ecoef)
-	}
 
 	return newFromBint(false, ecoef, bscale, 0)
 }
@@ -2603,17 +2596,12 @@ func (d Decimal) expm1Bint() (Decimal, error) {
 
 	// Alignment
 	dcoef.lsh(dcoef, bscale-d.Scale())
+	if d.IsNeg() {
+		dcoef.neg(dcoef)
+	}
 
 	// Compute e = exp(d)
 	ecoef.exp(dcoef)
-
-	if d.IsNeg() {
-		if ecoef.sign() == 0 {
-			return Decimal{}, unknownOverflowError()
-		}
-		// Compute e = ⌊1 / e⌋
-		ecoef.quo(bpow10[2*bscale], ecoef)
-	}
 
 	// Compute e = e - 1
 	eneg := ecoef.cmp(bpow10[bscale]) < 0
@@ -2622,54 +2610,106 @@ func (d Decimal) expm1Bint() (Decimal, error) {
 	return newFromBint(eneg, ecoef, bscale, 0)
 }
 
-// exp calculates z = exp(x) using Taylor series expansion.
-// The argument x must satisfy 0 <= x < 100, otherwise the result is undefined.
-// The argument x must be represented as a big integer: round(x * 10^41).
+// exp calculates z = exp(x).
+// The argument x must satisfy -100 < x < 100, otherwise the result is undefined.
+// x must be represented as a big integer: round(x * 10^41).
 // The result z is represented as a big integer: round(z * 10^41).
+//
+// The argument is reduced as x = n * log(2) + j/16 + k/1024 + r,
+// where 0 <= r < 1/1024, so that
+//
+//	exp(x) = 2^n * exp(j/16) * exp(k/1024) * exp(r),
+//
+// and exp(r) is computed using Taylor series expansion.
+// All intermediate values are binary fixed-point numbers with [lnFracBits]
+// fractional bits, so that multiplications require only shifts.
 func (z *bint) exp(x *bint) {
-	qcoef := getBint()
-	defer putBint(qcoef)
-
 	rcoef := getBint()
 	defer putBint(rcoef)
 
-	// Split x into integer part q and fractional part r
-	qcoef.quoRem(x, bpow10[bscale], rcoef)
+	pcoef := getBint()
+	defer putBint(pcoef)
 
-	// Retrieve z = exp(q) from precomputed cache
-	z.setBint(bexp[int(qcoef.fint())]) //nolint:gosec
+	scoef := getBint()
+	defer putBint(scoef)
 
-	if rcoef.sign() == 0 {
-		return
+	tcoef := getBint()
+	defer putBint(tcoef)
+
+	vcoef := getBint()
+	defer putBint(vcoef)
+
+	qcoef := getBint()
+	defer putBint(qcoef)
+
+	// The destination of Mul and QuoRem must not alias their operands,
+	// otherwise math/big allocates a new buffer for the result.
+	// t is a temporary buffer, q is a buffer for unused remainders.
+	r := (*big.Int)(rcoef)
+	p := (*big.Int)(pcoef)
+	s := (*big.Int)(scoef)
+	t := (*big.Int)(tcoef)
+	v := (*big.Int)(vcoef)
+	q := (*big.Int)(qcoef)
+
+	// Compute r = x / 10^41 using the reciprocal of 10^41
+	t.Mul((*big.Int)(x), (*big.Int)(binvTen))
+	r.Rsh(t, lnFracBits)
+
+	// Compute r = r - n * log(2), where 0 <= r < log(2)
+	n := int(math.Floor(float64(v.Rsh(r, lnFracBits-32).Int64()) / (1 << 32) / math.Ln2))
+	r.Sub(r, t.Mul(v.SetInt64(int64(n)), (*big.Int)(blnTwo)))
+	for r.Sign() < 0 {
+		n--
+		r.Add(r, (*big.Int)(blnTwo))
+	}
+	for r.Cmp((*big.Int)(blnTwo)) >= 0 {
+		n++
+		r.Sub(r, (*big.Int)(blnTwo))
 	}
 
-	zcoef := getBint()
-	defer putBint(zcoef)
+	// Compute r = r - j/16, where 0 <= r < 1/16
+	j := v.Rsh(r, lnFracBits-4).Uint64()
+	r.Sub(r, v.Lsh(v, lnFracBits-4))
 
-	gcoef := getBint()
-	defer putBint(gcoef)
+	// Compute r = r - k/1024, where 0 <= r < 1/1024
+	k := v.Rsh(r, lnFracBits-10).Uint64()
+	r.Sub(r, v.Lsh(v, lnFracBits-10))
 
-	hcoef := getBint()
-	defer putBint(hcoef)
-
-	zcoef.setFint(0)
-	gcoef.setBint(bpow10[bscale])
-
-	// Compute exp(r) using Taylor series expansion
-	// exp(r) = r^0 / 0! + r^1 / 1! + ... + r^n / n!
-	for i := range len(bfact) {
-		hcoef.quo(gcoef, bfact[i])
-		if hcoef.sign() == 0 {
-			break
-		}
-		zcoef.add(zcoef, hcoef)
-		gcoef.mul(gcoef, rcoef)
-		gcoef.rshDown(gcoef, bscale)
+	// Find the number of terms m, such that r^(m+1) / (m+1)! < 2^-lnFracBits,
+	// using r < 2^-e and log2(i!) >= log2(2) + log2(3) + ... + log2(i).
+	e := lnFracBits - r.BitLen()
+	m, b := 0, e
+	for b < lnFracBits {
+		m++
+		b += e + bits.Len(uint(m+1)) - 1
 	}
 
-	// Compute z = z * exp(r)
-	z.mul(z, zcoef)
-	z.rshDown(z, bscale)
+	// Compute s = m! * exp(r) = m!/0! + m!/1! * r + m!/2! * r^2 + ... + m!/m! * r^m
+	// using Horner's method, where all coefficients m!/i! are integers.
+	s.SetBit(s.SetUint64(0), lnFracBits, 1)
+	c := uint64(1)
+	for i := m; i > 0; i-- {
+		c *= uint64(i)
+		t.Mul(s, r)
+		s.Rsh(t, lnFracBits)
+		s.Add(s, v.Lsh(v.SetUint64(c), lnFracBits))
+	}
+
+	// Compute s = s / m!
+	t.QuoRem(s, v.SetUint64(c), q)
+	s, t = t, s
+
+	// Compute s = s * exp(j/16) * exp(k/1024)
+	t.Mul((*big.Int)(bexp16[j]), (*big.Int)(bexp1024[k]))
+	p.Rsh(t, lnFracBits)
+	t.Mul(s, p)
+
+	// Compute z = round(s * 2^n * 10^41)
+	s.Mul(t, (*big.Int)(bpow10[bscale]))
+	shift := uint(2*lnFracBits - n) //nolint:gosec
+	s.Add(s, v.SetBit(v.SetUint64(0), int(shift-1), 1))
+	(*big.Int)(z).Rsh(s, shift)
 }
 
 // Sum returns the (possibly rounded) sum of decimals.
