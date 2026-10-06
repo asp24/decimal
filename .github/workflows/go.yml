@@ -137,6 +137,9 @@ jobs:
       - name: Run fuzzing for exponential and power
         run: go test -fuzztime 20s -fuzz ^FuzzDecimal_Pow_Exp$
 
+      - name: Run fuzzing for logarithm
+        run: go test -fuzztime 20s -fuzz ^FuzzDecimal_Log$
+
       - name: Run fuzzing for exponential and logarithm
         run: go test -fuzztime 20s -fuzz ^FuzzDecimalp_Log_Exp$
 

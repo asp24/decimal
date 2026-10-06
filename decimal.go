@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
 	"math/bits"
 	"strconv"
 	"unicode/utf8"
@@ -2398,49 +2399,117 @@ func (d Decimal) logBint() (Decimal, error) {
 	return newFromBint(eneg, ecoef, bscale, 0)
 }
 
-// log calculates z = log(x) using Halley's method.
+// log calculates z = log(x).
 // The argument x must satisfy x >= 1, otherwise the result is undefined.
 // x must be represented as a big integer: round(x * 10^41).
 // The result z is represented as a big integer: round(z * 10^41).
+//
+// The argument is reduced as x = 10^n * 2^b * (1 + j/16) * (1 + k/1024) * f,
+// where 1 <= f < 1 + 1/1024, so that
+//
+//	log(x) = n * log(10) + b * log(2) + log(1 + j/16) + log(1 + k/1024) + log(f),
+//
+// and log(f) = 2 * atanh(u), where u = (f - 1) / (f + 1) < 2^-11,
+// is computed using Taylor series expansion.
+// All intermediate values are binary fixed-point numbers with [lnFracBits]
+// fractional bits, so that multiplications require only shifts.
 func (z *bint) log(x *bint) {
-	zcoef := getBint()
-	defer putBint(zcoef)
-
 	fcoef := getBint()
 	defer putBint(fcoef)
 
-	Ecoef := getBint()
-	defer putBint(Ecoef)
+	ucoef := getBint()
+	defer putBint(ucoef)
 
-	ncoef := getBint()
-	defer putBint(ncoef)
+	vcoef := getBint()
+	defer putBint(vcoef)
 
-	mcoef := getBint()
-	defer putBint(mcoef)
+	pcoef := getBint()
+	defer putBint(pcoef)
 
-	fcoef.setFint(0)
+	scoef := getBint()
+	defer putBint(scoef)
 
-	// The initial guess is calculated as n*ln(10),
-	// where n is the position of the most significant digit.
-	n := x.prec() - bscale
-	zcoef.setBint(bnlog10[n])
+	tcoef := getBint()
+	defer putBint(tcoef)
 
-	// Halley's method
-	for range 50 {
-		Ecoef.exp(zcoef)
-		ncoef.sub(Ecoef, x)
-		ncoef.dbl(ncoef)
-		mcoef.add(Ecoef, x)
-		ncoef.lsh(ncoef, bscale)
-		ncoef.quo(ncoef, mcoef)
-		fcoef.sub(zcoef, ncoef)
-		if zcoef.cmp(fcoef) == 0 {
-			break
-		}
-		zcoef.setBint(fcoef)
+	rcoef := getBint()
+	defer putBint(rcoef)
+
+	// The destination of Mul and QuoRem must not alias their operands,
+	// otherwise math/big allocates a new buffer for the result.
+	// t is a temporary buffer that is swapped with the destination,
+	// r is a buffer for unused remainders.
+	f := (*big.Int)(fcoef)
+	u := (*big.Int)(ucoef)
+	v := (*big.Int)(vcoef)
+	p := (*big.Int)(pcoef)
+	s := (*big.Int)(scoef)
+	t := (*big.Int)(tcoef)
+	r := (*big.Int)(rcoef)
+
+	// Compute f = x / 10^n, where 1 <= f < 10
+	n := x.prec() - bscale - 1
+	t.Lsh((*big.Int)(x), lnFracBits)
+	if n >= 0 {
+		f.QuoRem(t, (*big.Int)(bpow10[n+bscale]), r)
+	} else {
+		f.QuoRem(t, (*big.Int)(bpow10[bscale]), r)
+		f, t = t.Mul(f, (*big.Int)(bpow10[-n])), f
 	}
 
-	z.setBint(zcoef)
+	// Compute f = f / 2^b, where 1 <= f < 2
+	b := f.BitLen() - lnFracBits - 1
+	if b >= 0 {
+		f.Rsh(f, uint(b))
+	} else {
+		f.Lsh(f, uint(-b))
+	}
+
+	// Compute f = f / (1 + j/16), where 1 <= f < 1 + 1/16
+	j := v.Rsh(f, lnFracBits-4).Uint64() - 16
+	f.Lsh(f, 4)
+	t.QuoRem(f, v.SetUint64(16+j), r)
+	f, t = t, f
+
+	// Compute f = f / (1 + k/1024), where 1 <= f < 1 + 1/1024
+	k := v.Rsh(f, lnFracBits-10).Uint64() - 1024
+	f.Lsh(f, 10)
+	t.QuoRem(f, v.SetUint64(1024+k), r)
+	f, t = t, f
+
+	// Compute u = (f - 1) / (f + 1)
+	v.SetBit(v.SetUint64(0), lnFracBits, 1)
+	t.Sub(f, v)
+	t.Lsh(t, lnFracBits)
+	f.Add(f, v)
+	u.QuoRem(t, f, r)
+
+	// Compute s = 2 * atanh(u) = 2 * (u + u^3/3 + u^5/5 + ...)
+	s.Set(u)
+	p.Set(u)
+	t.Mul(u, u)
+	u.Rsh(t, lnFracBits)
+	for i := uint64(3); ; i += 2 {
+		t.Mul(p, u)
+		p.Rsh(t, lnFracBits)
+		if p.Sign() == 0 {
+			break
+		}
+		f.QuoRem(p, v.SetUint64(i), r)
+		s.Add(s, f)
+	}
+	s.Lsh(s, 1)
+
+	// Compute s = s + n * log(10) + b * log(2) + log(1 + j/16) + log(1 + k/1024)
+	s.Add(s, t.Mul(v.SetInt64(int64(n)), (*big.Int)(blnTen)))
+	s.Add(s, t.Mul(v.SetInt64(int64(b)), (*big.Int)(blnTwo)))
+	s.Add(s, (*big.Int)(bln16[j]))
+	s.Add(s, (*big.Int)(bln1024[k]))
+
+	// Compute z = round(s * 10^41 / 2^lnFracBits)
+	t.Mul(s, (*big.Int)(bpow10[bscale]))
+	t.Add(t, v.SetBit(v.SetUint64(0), lnFracBits-1, 1))
+	(*big.Int)(z).Rsh(t, lnFracBits)
 }
 
 // Exp returns the (possibly rounded) exponential of a decimal.
