@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Implemented `Decimal.MarshalGQL`, `Decimal.UnmarshalGQL`, `NullDecimal.MarshalGQL`,
+  `NullDecimal.UnmarshalGQL` (`github.com/99designs/gqlgen`).
+  Decimals are marshaled as quoted strings, numeric variables are parsed without loss of precision.
+
 ## [0.2.0] - 2026-10-06
 
 ### Added

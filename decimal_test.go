@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	jsonv2 "encoding/json/v2"
 	"fmt"
+	"io"
 	"math"
 	"math/big"
 	"math/rand/v2"
@@ -649,6 +650,206 @@ func TestNullDecimal_MarshalJSONTo(t *testing.T) {
 		}
 		if string(got) != tt.want {
 			t.Errorf("json.Marshal(%v) = %s, want %s", tt.n, got, tt.want)
+		}
+	}
+}
+
+// gqlMarshaler and gqlUnmarshaler mirror graphql.Marshaler and graphql.Unmarshaler
+// from github.com/99designs/gqlgen.
+type gqlMarshaler interface {
+	MarshalGQL(w io.Writer)
+}
+
+type gqlUnmarshaler interface {
+	UnmarshalGQL(v any) error
+}
+
+func TestDecimal_GQLInterfaces(t *testing.T) {
+	var d any = Decimal{}
+	if _, ok := d.(gqlMarshaler); !ok {
+		t.Errorf("%T does not implement graphql.Marshaler", d)
+	}
+	d = &Decimal{}
+	if _, ok := d.(gqlUnmarshaler); !ok {
+		t.Errorf("%T does not implement graphql.Unmarshaler", d)
+	}
+
+	var n any = NullDecimal{}
+	if _, ok := n.(gqlMarshaler); !ok {
+		t.Errorf("%T does not implement graphql.Marshaler", n)
+	}
+	n = &NullDecimal{}
+	if _, ok := n.(gqlUnmarshaler); !ok {
+		t.Errorf("%T does not implement graphql.Unmarshaler", n)
+	}
+}
+
+func TestDecimal_MarshalGQL(t *testing.T) {
+	tests := []struct {
+		d    string
+		want string
+	}{
+		{"0", `"0"`},
+		{"0.00", `"0.00"`},
+		{"-5.67", `"-5.67"`},
+		{"9999999999999999999", `"9999999999999999999"`},
+		{"-0.0000000000000000001", `"-0.0000000000000000001"`},
+	}
+	for _, tt := range tests {
+		d := MustParse(tt.d)
+		var buf bytes.Buffer
+		d.MarshalGQL(&buf)
+		if got := buf.String(); got != tt.want {
+			t.Errorf("%q.MarshalGQL() = %s, want %s", d, got, tt.want)
+		}
+	}
+}
+
+func TestNullDecimal_MarshalGQL(t *testing.T) {
+	tests := []struct {
+		n    NullDecimal
+		want string
+	}{
+		{NullDecimal{}, `null`},
+		{NullDecimal{Decimal: MustParse("5.67"), Valid: false}, `null`},
+		{NullDecimal{Decimal: MustParse("0"), Valid: true}, `"0"`},
+		{NullDecimal{Decimal: MustParse("-5.67"), Valid: true}, `"-5.67"`},
+	}
+	for _, tt := range tests {
+		var buf bytes.Buffer
+		tt.n.MarshalGQL(&buf)
+		if got := buf.String(); got != tt.want {
+			t.Errorf("%v.MarshalGQL() = %s, want %s", tt.n, got, tt.want)
+		}
+	}
+}
+
+func TestDecimal_UnmarshalGQL(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		tests := []struct {
+			v    any
+			want string
+		}{
+			// String literals and string variables
+			{"0", "0"},
+			{"-5.67", "-5.67"},
+			{"9999999999999999999", "9999999999999999999"},
+			{"-0.0000000000000000001", "-0.0000000000000000001"},
+			{"1e5", "100000"},
+
+			// Numeric variables, gqlgen decodes them with json.Decoder.UseNumber
+			{json.Number("0"), "0"},
+			{json.Number("-5.67"), "-5.67"},
+			{json.Number("9999999999999999999"), "9999999999999999999"},
+			{json.Number("0.1234567890123456789"), "0.1234567890123456789"},
+			{json.Number("1.5e-3"), "0.0015"},
+
+			// Numeric literals, gqlparser parses them to int64 and float64
+			{int64(0), "0"},
+			{int64(-567), "-567"},
+			{int64(math.MaxInt64), "9223372036854775807"},
+			{float64(-5.67), "-5.67"},
+			{float64(0.1), "0.1"},
+
+			// Default values in generated code and direct calls
+			{int(-567), "-567"},
+		}
+		for _, tt := range tests {
+			got := Decimal{}
+			err := got.UnmarshalGQL(tt.v)
+			if err != nil {
+				t.Errorf("UnmarshalGQL(%T(%v)) failed: %v", tt.v, tt.v, err)
+				continue
+			}
+			want := MustParse(tt.want)
+			if got != want {
+				t.Errorf("UnmarshalGQL(%T(%v)) = %q, want %q", tt.v, tt.v, got, want)
+			}
+		}
+	})
+
+	t.Run("error", func(t *testing.T) {
+		tests := []any{
+			nil,
+			"",
+			"-1.1.1",
+			"abc",
+			json.Number("1.1.1"),
+			json.Number("1e1000"),
+			math.NaN(),
+			math.Inf(1),
+			true,
+			[]byte("1"),
+			map[string]any{},
+		}
+		for _, tt := range tests {
+			got := Decimal{}
+			err := got.UnmarshalGQL(tt)
+			if err == nil {
+				t.Errorf("UnmarshalGQL(%T(%v)) did not fail", tt, tt)
+			}
+		}
+	})
+}
+
+func TestNullDecimal_UnmarshalGQL(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		tests := []struct {
+			v    any
+			want NullDecimal
+		}{
+			{nil, NullDecimal{}},
+			{"-5.67", NullDecimal{Decimal: MustParse("-5.67"), Valid: true}},
+			{json.Number("-5.67"), NullDecimal{Decimal: MustParse("-5.67"), Valid: true}},
+			{int64(0), NullDecimal{Decimal: MustParse("0"), Valid: true}},
+		}
+		for _, tt := range tests {
+			got := NullDecimal{Decimal: MustParse("1.23"), Valid: true}
+			err := got.UnmarshalGQL(tt.v)
+			if err != nil {
+				t.Errorf("UnmarshalGQL(%T(%v)) failed: %v", tt.v, tt.v, err)
+				continue
+			}
+			if got != tt.want {
+				t.Errorf("UnmarshalGQL(%T(%v)) = %v, want %v", tt.v, tt.v, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("error", func(t *testing.T) {
+		tests := []any{"-1.1.1", json.Number("abc"), true}
+		for _, tt := range tests {
+			got := NullDecimal{}
+			err := got.UnmarshalGQL(tt)
+			if err == nil {
+				t.Errorf("UnmarshalGQL(%T(%v)) did not fail", tt, tt)
+			}
+		}
+	})
+}
+
+func TestDecimal_GQLRoundTrip(t *testing.T) {
+	tests := []string{
+		"0", "0.00", "-5.67", "9999999999999999999", "-0.0000000000000000001",
+	}
+	for _, tt := range tests {
+		want := MustParse(tt)
+		var buf bytes.Buffer
+		want.MarshalGQL(&buf)
+
+		// gqlgen hands string values to UnmarshalGQL without quotes
+		var s string
+		if err := json.Unmarshal(buf.Bytes(), &s); err != nil {
+			t.Errorf("MarshalGQL(%q) produced invalid JSON string %s: %v", want, buf.Bytes(), err)
+			continue
+		}
+		var got Decimal
+		if err := got.UnmarshalGQL(s); err != nil {
+			t.Errorf("UnmarshalGQL(%q) failed: %v", s, err)
+			continue
+		}
+		if got != want || got.Scale() != want.Scale() {
+			t.Errorf("round trip of %q = %q", want, got)
 		}
 	}
 }
