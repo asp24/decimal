@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/govalues/decimal"
+	"github.com/asp24/decimal"
 )
 
 // This example implements a simple calculator that evaluates mathematical

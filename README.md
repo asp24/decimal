@@ -6,10 +6,12 @@
 [![godocb]][godoc]
 [![licenseb]][license]
 [![versionb]][version]
-[![awesomeb]][awesome]
 
 Package decimal implements correctly rounded decimal floating-point numbers for Go.
 This package is designed specifically for use in transactional financial systems.
+
+This is a maintained fork of [govalues/decimal], which is no longer developed.
+To migrate, replace the `github.com/govalues/decimal` import path with `github.com/asp24/decimal`.
 
 ## Key Features
 
@@ -36,7 +38,7 @@ This package is designed specifically for use in transactional financial systems
 To add the decimal package to your Go workspace:
 
 ```bash
-go get github.com/govalues/decimal
+go get github.com/asp24/decimal
 ```
 
 ### Basic Usage
@@ -49,7 +51,7 @@ package main
 
 import (
     "fmt"
-    "github.com/govalues/decimal"
+    "github.com/asp24/decimal"
 )
 
 func main() {
@@ -109,7 +111,7 @@ func main() {
 ## Documentation
 
 For detailed documentation and additional examples, visit the package
-[documentation](https://pkg.go.dev/github.com/govalues/decimal#section-documentation).
+[documentation](https://pkg.go.dev/github.com/asp24/decimal#section-documentation).
 For examples related to financial calculations, see the `money` package
 [documentation](https://pkg.go.dev/github.com/govalues/money#section-documentation).
 
@@ -163,20 +165,18 @@ cpu: AMD Ryzen 7 3700C  with Radeon Vega Mobile Gfx
 
 The benchmark results shown in the table are provided for informational purposes only and may vary depending on your specific use case.
 
-[codecov]: https://codecov.io/gh/govalues/decimal
-[codecovb]: https://img.shields.io/codecov/c/github/govalues/decimal/main?color=brightcolor
-[goreport]: https://goreportcard.com/report/github.com/govalues/decimal
-[goreportb]: https://goreportcard.com/badge/github.com/govalues/decimal
-[github]: https://github.com/govalues/decimal/actions/workflows/go.yml
-[githubb]: https://img.shields.io/github/actions/workflow/status/govalues/decimal/go.yml
-[godoc]: https://pkg.go.dev/github.com/govalues/decimal#section-documentation
+[codecov]: https://codecov.io/gh/asp24/decimal
+[codecovb]: https://img.shields.io/codecov/c/github/asp24/decimal/main?color=brightcolor
+[goreport]: https://goreportcard.com/report/github.com/asp24/decimal
+[goreportb]: https://goreportcard.com/badge/github.com/asp24/decimal
+[github]: https://github.com/asp24/decimal/actions/workflows/go.yml
+[githubb]: https://img.shields.io/github/actions/workflow/status/asp24/decimal/go.yml
+[godoc]: https://pkg.go.dev/github.com/asp24/decimal#section-documentation
 [godocb]: https://img.shields.io/badge/go.dev-reference-blue
 [version]: https://go.dev/dl
-[versionb]: https://img.shields.io/github/go-mod/go-version/govalues/decimal?label=go
+[versionb]: https://img.shields.io/github/go-mod/go-version/asp24/decimal?label=go
 [license]: https://en.wikipedia.org/wiki/MIT_License
-[licenseb]: https://img.shields.io/github/license/govalues/decimal?color=blue
-[awesome]: https://github.com/avelino/awesome-go#financial
-[awesomeb]: https://awesome.re/mentioned-badge.svg
+[licenseb]: https://img.shields.io/github/license/asp24/decimal?color=blue
 [cockroachdb/apd]: https://pkg.go.dev/github.com/cockroachdb/apd
 [shopspring/decimal]: https://pkg.go.dev/github.com/shopspring/decimal
 [mongo-driver/bson]: https://pkg.go.dev/go.mongodb.org/mongo-driver/v2/bson#ValueUnmarshaler
@@ -185,4 +185,5 @@ The benchmark results shown in the table are provided for informational purposes
 [database/sql]: https://pkg.go.dev/database/sql#Scanner
 [specification]: https://speleotrove.com/decimal/telcoSpec.html
 [fuzz testing]: https://github.com/govalues/decimal-tests
+[govalues/decimal]: https://github.com/govalues/decimal
 [half-to-even]: https://en.wikipedia.org/wiki/Rounding#Rounding_half_to_even

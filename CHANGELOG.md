@@ -8,6 +8,7 @@
 
 ### Changed
 
+- Changed module path to `github.com/asp24/decimal`.
 - Bumped go version to 1.27.
 - Migrated linter configuration to golangci-lint v2.
 

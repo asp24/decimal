@@ -1,3 +1,3 @@
-module github.com/govalues/decimal
+module github.com/asp24/decimal
 
 go 1.27
