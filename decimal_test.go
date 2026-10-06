@@ -4868,6 +4868,72 @@ func TestDecimal_Expm1(t *testing.T) {
 	})
 }
 
+func TestBint_logTables(t *testing.T) {
+	// Natural logarithms of 2 and 10 with 100 digits, see
+	// https://oeis.org/A002162 and https://oeis.org/A002392.
+	consts := []struct {
+		name string
+		c    *bint
+		want string
+	}{
+		{"blnTwo", blnTwo, "0.6931471805599453094172321214581765680755001343602552541206800094933936219696947156058633269964186875"},
+		{"blnTen", blnTen, "2.3025850929940456840179914546843642076011014886287729760333279009675726096773524802359972050895982983"},
+	}
+	for _, tt := range consts {
+		f, _, err := big.ParseFloat(tt.want, 10, 512, big.ToNearestEven)
+		if err != nil {
+			t.Fatalf("ParseFloat(%q) failed: %v", tt.want, err)
+		}
+		f.SetMantExp(f, lnFracBits)
+		f.Add(f, big.NewFloat(0.5))
+		want, _ := f.Int(nil)
+		if (*big.Int)(tt.c).Cmp(want) != 0 {
+			t.Errorf("%v = %v, want %v", tt.name, (*big.Int)(tt.c), want)
+		}
+	}
+
+	// check verifies that c = round(log(x) * 2^lnFracBits),
+	// where x = round(x * 10^41), using logHalley as a reference.
+	// logHalley is accurate to about 10^-39.
+	check := func(name string, c, x *bint) {
+		t.Helper()
+		want := getBint()
+		defer putBint(want)
+		want.logHalley(x)
+
+		// Convert c to round(log(x) * 10^41)
+		got := (*big.Int)(getBint())
+		defer putBint((*bint)(got))
+		got.Mul((*big.Int)(c), (*big.Int)(bpow10[bscale]))
+		got.Add(got, new(big.Int).Lsh(big.NewInt(1), lnFracBits-1))
+		got.Rsh(got, lnFracBits)
+
+		diff := getBint()
+		defer putBint(diff)
+		diff.subAbs((*bint)(got), want)
+		if diff.cmp(bpow10[2]) > 0 {
+			t.Errorf("%v = %v, want %v", name, got, want.string())
+		}
+	}
+
+	x := getBint()
+	defer putBint(x)
+
+	for j, c := range bln16 {
+		x.setInt64(int64(16 + j))
+		x.lsh(x, bscale)
+		x.quo(x, (*bint)(big.NewInt(16)))
+		check(fmt.Sprintf("bln16[%v]", j), c, x)
+	}
+
+	for k, c := range bln1024 {
+		x.setInt64(int64(1024 + k))
+		x.lsh(x, bscale)
+		x.quo(x, (*bint)(big.NewInt(1024)))
+		check(fmt.Sprintf("bln1024[%v]", k), c, x)
+	}
+}
+
 func TestDecimal_Log(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		tests := []struct {
@@ -7380,6 +7446,38 @@ func FuzzDecimal_Cmp(f *testing.F) {
 	)
 }
 
+func FuzzDecimal_Sqrt(f *testing.F) {
+	for _, d := range corpus {
+		f.Add(d.scale, d.coef)
+	}
+
+	f.Fuzz(
+		func(t *testing.T, scale int, coef uint64) {
+			d, err := newSafe(false, fint(coef), scale)
+			if err != nil || d.IsZero() {
+				t.Skip()
+				return
+			}
+
+			got, err := d.sqrtFint()
+			if err != nil {
+				t.Skip()
+				return
+			}
+
+			want, err := d.sqrtBint()
+			if err != nil {
+				t.Errorf("sqrtBint(%q) failed: %v", d, err)
+				return
+			}
+
+			if got.CmpTotal(want) != 0 {
+				t.Errorf("sqrtBint(%q) = %q, whereas sqrtFint(%q) = %q", d, want, d, got)
+			}
+		},
+	)
+}
+
 func FuzzDecimal_Sqrt_PowInt(f *testing.F) {
 	for _, d := range corpus {
 		f.Add(d.neg, d.scale, d.coef)
@@ -7520,6 +7618,58 @@ func FuzzDecimal_Pow_Exp(f *testing.F) {
 			} else if cmp != 0 {
 				t.Errorf("%v.Pow(%q) = %q, whereas %q.Exp() = %q", E, d, got, d, want)
 				return
+			}
+		},
+	)
+}
+
+func FuzzDecimal_Log(f *testing.F) {
+	for _, d := range corpus {
+		f.Add(d.scale, d.coef)
+	}
+
+	f.Fuzz(
+		func(t *testing.T, scale int, coef uint64) {
+			d, err := newSafe(false, fint(coef), scale)
+			if err != nil || d.IsZero() {
+				t.Skip()
+				return
+			}
+
+			// Alignment, as in logBint
+			dcoef := getBint()
+			defer putBint(dcoef)
+			dcoef.setFint(d.coef)
+			eneg := false
+			if d.WithinOne() {
+				dcoef.quo(bpow10[bscale+d.Scale()], dcoef)
+				eneg = true
+			} else {
+				dcoef.lsh(dcoef, bscale-d.Scale())
+			}
+
+			gcoef := getBint()
+			defer putBint(gcoef)
+			gcoef.log(dcoef)
+
+			wcoef := getBint()
+			defer putBint(wcoef)
+			wcoef.logHalley(dcoef)
+
+			// logHalley is accurate to about 10^-39, so both implementations
+			// must produce the same result after rounding to 19 digits.
+			got, err := newFromBint(eneg, gcoef, bscale, 0)
+			if err != nil {
+				t.Errorf("newFromBint(%v) failed: %v", gcoef.string(), err)
+				return
+			}
+			want, err := newFromBint(eneg, wcoef, bscale, 0)
+			if err != nil {
+				t.Errorf("newFromBint(%v) failed: %v", wcoef.string(), err)
+				return
+			}
+			if got.CmpTotal(want) != 0 {
+				t.Errorf("%q.Log() = %q, want %q", d, got, want)
 			}
 		},
 	)
@@ -7794,4 +7944,50 @@ func FuzzDecimal_Trim(f *testing.F) {
 			}
 		},
 	)
+}
+
+// logHalley calculates z = log(x) using Halley's method.
+// It is the previous implementation of [bint.log], kept as a reference for testing.
+// The argument x must satisfy x >= 1, otherwise the result is undefined.
+// x must be represented as a big integer: round(x * 10^41).
+// The result z is represented as a big integer: round(z * 10^41).
+func (z *bint) logHalley(x *bint) {
+	zcoef := getBint()
+	defer putBint(zcoef)
+
+	fcoef := getBint()
+	defer putBint(fcoef)
+
+	Ecoef := getBint()
+	defer putBint(Ecoef)
+
+	ncoef := getBint()
+	defer putBint(ncoef)
+
+	mcoef := getBint()
+	defer putBint(mcoef)
+
+	fcoef.setFint(0)
+
+	// The initial guess is calculated as n*ln(10),
+	// where n is the position of the most significant digit.
+	n := x.prec() - bscale
+	zcoef.setBint(bnlog10[n])
+
+	// Halley's method
+	for range 50 {
+		Ecoef.exp(zcoef)
+		ncoef.sub(Ecoef, x)
+		ncoef.dbl(ncoef)
+		mcoef.add(Ecoef, x)
+		ncoef.lsh(ncoef, bscale)
+		ncoef.quo(ncoef, mcoef)
+		fcoef.sub(zcoef, ncoef)
+		if zcoef.cmp(fcoef) == 0 {
+			break
+		}
+		zcoef.setBint(fcoef)
+	}
+
+	z.setBint(zcoef)
 }

@@ -122,6 +122,9 @@ jobs:
       - name: Run fuzzing for integer division and remainder
         run: go test -fuzztime 20s -fuzz ^FuzzDecimal_QuoRem$
 
+      - name: Run fuzzing for square root
+        run: go test -fuzztime 20s -fuzz ^FuzzDecimal_Sqrt$
+
       - name: Run fuzzing for square root and integer power
         run: go test -fuzztime 20s -fuzz ^FuzzDecimal_Sqrt_PowInt$
 
@@ -133,6 +136,9 @@ jobs:
 
       - name: Run fuzzing for exponential and power
         run: go test -fuzztime 20s -fuzz ^FuzzDecimal_Pow_Exp$
+
+      - name: Run fuzzing for logarithm
+        run: go test -fuzztime 20s -fuzz ^FuzzDecimal_Log$
 
       - name: Run fuzzing for exponential and logarithm
         run: go test -fuzztime 20s -fuzz ^FuzzDecimalp_Log_Exp$

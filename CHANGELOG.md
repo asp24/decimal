@@ -11,6 +11,10 @@
 - Changed module path to `github.com/asp24/decimal`.
 - Bumped go version to 1.27.
 - Migrated linter configuration to golangci-lint v2.
+- Improved performance of `Decimal.Quo` for inexact quotients (about 10 times faster),
+  `Decimal.Sqrt` (about 50 times faster), `Decimal.Log`, `Decimal.Log2`, `Decimal.Log10`,
+  `Decimal.Log1p` (about 30–60 times faster) and `Decimal.Pow` (about 5 times faster).
+  Square roots, inexact quotients and logarithms no longer allocate or allocate much less.
 
 ### Fixed
 

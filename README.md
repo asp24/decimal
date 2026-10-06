@@ -16,8 +16,8 @@ To migrate, replace the `github.com/govalues/decimal` import path with `github.c
 
 - **BSON, JSON, XML, SQL** - Implements the necessary interfaces for direct compatibility
   with the [mongo-driver/bson], [encoding/json], [encoding/xml], and [database/sql] packages.
-- **No Heap Allocations** - Addition, subtraction, multiplication, exact division
-  and parsing avoid heap allocations, preventing garbage collector impact.
+- **No Heap Allocations** - Addition, subtraction, multiplication, division,
+  square root and parsing avoid heap allocations, preventing garbage collector impact.
 - **Correct Rounding** - For all methods, the result is the one that would
   be obtained if the true mathematical value were rounded to 19 digits of
   precision using the [half-to-even] rounding (a.k.a. "banker's rounding").
@@ -122,7 +122,7 @@ Comparison with other popular packages:
 | -------------------- | --------- | ------------ | ------------------- | ------------------- | ------------------------- | ------------------- | --------------------------- |
 | Correctly Rounded    | Yes       | No           | No                  | No[^truncate]       | No[^halfup]               | Partly[^partly]     | No[^erl]                    |
 | Precision            | 19 digits | Arbitrary    | Arbitrary           | 19 decimal places   | 12 decimal places[^fast]  | 34 digits           | Arbitrary                   |
-| Heap Allocations     | Low       | Medium       | High                | No                  | No[^fast]                 | No                  | Medium                      |
+| Heap Allocations     | No        | Medium       | High                | No                  | No[^fast]                 | No                  | Medium                      |
 | Panic Free           | Yes       | Yes          | No[^divzero]        | Yes                 | No[^divzero]              | Yes[^nan]           | Yes                         |
 | Mutability           | Immutable | Mutable      | Immutable           | Immutable           | Immutable                 | Immutable           | Mutable                     |
 | Mathematical Context | Implicit  | Explicit     | Implicit            | Implicit            | Implicit                  | Implicit            | Explicit                    |
@@ -153,25 +153,25 @@ for example, exp(-1.28961) = 0.2753781596322221254 instead of 0.2753781596322221
 
 Median time per operation (lower is better, the best result is in bold):
 
-| Test Case | Expression            | decimal    | [apd]  | [shopspring] | [udecimal] | [alpacadecimal] | [decimal128] | [ericlagergren] |
-| --------- | --------------------- | ---------: | -----: | -----------: | ---------: | --------------: | -----------: | --------------: |
-| Add       | 5 + 6                 |       9.5n |  78.4n |        94.8n |      11.8n |        **4.0n** |        31.8n |            148n |
-| Mul       | 2 * 3                 |       9.6n |  78.9n |         102n |      14.1n |        **6.3n** |        31.9n |            154n |
-| Quo       | 2 / 4 (exact)         |      26.1n |   128n |         167n |      15.8n |        **8.0n** |        32.9n |            226n |
-| Quo       | 2 / 3 (inexact)       |       269n |   139n |         230n |  **15.5n** |            206n |        81.0n |            257n |
-| PowInt    | 1.1^60                |       529n |  1.12µ |    **163n**  |       449n |            815n |        13.4µ |            968n |
-| PowInt    | 1.01^600              |      1.63µ |  3.76µ |    **1.18µ** |      3.32µ |           12.7µ |        21.9µ |           2.28µ |
-| PowInt    | 1.001^6000            |  **2.90µ** |  7.99µ |        47.9µ |     107.2µ |          406.1µ |        21.5µ |           4.00µ |
-| Sqrt      | √2                    |      1.38µ |  1.20µ |            — |  **45.2n** |               — |        23.1µ |            846n |
-| Exp       | exp(0.5)              |      6.97µ |  16.5µ |    **5.00µ** |          — |           12.9µ |        13.1µ |           11.1µ |
-| Log       | ln(0.5)               |      51.1µ |  52.5µ |        34.8µ |          — |               — |     **842n** |           27.9µ |
-| Parse     | 1                     |       6.4n |  44.7n |        27.7n |       6.6n |        **3.5n** |        21.0n |           84.0n |
-| Parse     | 123.456               |       8.6n |  90.5n |        35.0n |       9.5n |        **5.9n** |        25.4n |            106n |
-| Parse     | 123456789.1234567890  |  **13.9n** |   104n |         174n |      19.6n |            202n |        34.2n |            164n |
-| String    | 1                     |       3.5n |  10.0n |        53.8n |       9.0n |        **1.7n** |        21.2n |           81.3n |
-| String    | 123.456               |  **15.7n** |  24.2n |        84.9n |      23.1n |           23.5n |        45.4n |           90.9n |
-| String    | 123456789.1234567890  |  **28.6n** |  81.4n |         109n |      37.7n |            103n |        49.3n |           94.3n |
-| Telco     | (see [specification]) |  **44.5n** |   317n |         395n |      51.0n |            410n |         220n |            105n |
+| Test Case | Expression            | decimal   | [apd] | [shopspring] | [udecimal] | [alpacadecimal] | [decimal128] | [ericlagergren] |
+| --------- | --------------------- | --------: | ----: | -----------: | ---------: | --------------: | -----------: | --------------: |
+| Add       | 5 + 6                 |      9.8n | 78.2n |        96.0n |      11.7n |        **4.1n** |        31.9n |            150n |
+| Mul       | 2 * 3                 |      9.6n | 79.1n |         103n |      13.9n |        **7.0n** |        31.5n |            153n |
+| Quo       | 2 / 4 (exact)         |     24.1n |  128n |         165n |      15.5n |        **7.6n** |        33.0n |            229n |
+| Quo       | 2 / 3 (inexact)       |     27.9n |  139n |         225n |  **15.4n** |            205n |        82.2n |            263n |
+| PowInt    | 1.1^60                |      518n | 1.17µ |     **160n** |       445n |            809n |        13.4µ |           1.00µ |
+| PowInt    | 1.01^600              |     1.62µ | 3.94µ |    **1.20µ** |      3.35µ |           12.8µ |        21.9µ |           2.38µ |
+| PowInt    | 1.001^6000            | **2.90µ** | 8.22µ |        47.5µ |     107.0µ |          398.3µ |        21.3µ |           4.03µ |
+| Sqrt      | √2                    | **27.5n** | 1.21µ |            — |      44.6n |               — |        22.6µ |            832n |
+| Exp       | exp(0.5)              |     7.07µ | 16.5µ |    **5.19µ** |          — |           13.2µ |        12.2µ |           11.2µ |
+| Log       | ln(0.5)               |  **767n** | 51.9µ |        34.2µ |          — |               — |         833n |           27.0µ |
+| Parse     | 1                     |      6.3n | 48.4n |        29.5n |       6.5n |        **3.4n** |        19.7n |           85.3n |
+| Parse     | 123.456               |      8.4n |  102n |        38.2n |       9.4n |        **5.8n** |        23.8n |            106n |
+| Parse     | 123456789.1234567890  | **13.6n** |  114n |         193n |      20.1n |            211n |        31.9n |            156n |
+| String    | 1                     |      3.3n | 10.2n |        46.6n |       8.9n |        **1.7n** |        21.0n |           79.4n |
+| String    | 123.456               | **14.7n** | 23.7n |        79.6n |      23.1n |           23.0n |        45.3n |           91.1n |
+| String    | 123456789.1234567890  | **27.7n** | 80.1n |         104n |      37.6n |            101n |        50.1n |           97.5n |
+| Telco     | (see [specification]) | **44.1n** |  320n |         395n |      51.3n |            425n |         225n |            105n |
 
 Heap allocations per operation:
 
@@ -180,13 +180,13 @@ Heap allocations per operation:
 | Add       | 5 + 6                 |       0 |     3 |            6 |          0 |               0 |            0 |               3 |
 | Mul       | 2 * 3                 |       0 |     3 |            6 |          0 |               0 |            0 |               3 |
 | Quo       | 2 / 4 (exact)         |       0 |     3 |            8 |          0 |               0 |            0 |               6 |
-| Quo       | 2 / 3 (inexact)       |       2 |     3 |           11 |          0 |              10 |            0 |               7 |
+| Quo       | 2 / 3 (inexact)       |       0 |     3 |           11 |          0 |              10 |            0 |               7 |
 | PowInt    | 1.1^60                |       2 |    12 |            5 |         12 |              12 |            0 |              15 |
 | PowInt    | 1.01^600              |      16 |    58 |           10 |         22 |              16 |            0 |              39 |
 | PowInt    | 1.001^6000            |      30 |   130 |           16 |         34 |              22 |            0 |              69 |
-| Sqrt      | √2                    |      16 |     9 |            — |          0 |               — |            0 |              12 |
+| Sqrt      | √2                    |       0 |     9 |            — |          0 |               — |            0 |              12 |
 | Exp       | exp(0.5)              |      82 |   211 |          210 |          — |             281 |            0 |             130 |
-| Log       | ln(0.5)               |     554 |   773 |          690 |          — |               — |            0 |             381 |
+| Log       | ln(0.5)               |       4 |   773 |          690 |          — |               — |            0 |             381 |
 | Parse     | 1                     |       0 |     1 |            2 |          0 |               0 |            0 |               2 |
 | Parse     | 123.456               |       0 |     2 |            2 |          0 |               0 |            0 |               2 |
 | Parse     | 123456789.1234567890  |       0 |     2 |            4 |          0 |               5 |            0 |               2 |
