@@ -10,6 +10,7 @@ import (
 	"math"
 	"math/big"
 	"math/rand/v2"
+	"strconv"
 	"strings"
 	"testing"
 	"unsafe"
@@ -1308,6 +1309,46 @@ func TestDecimal_String(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("reference", func(t *testing.T) {
+		var coefs []fint
+		for _, p := range pow10 {
+			coefs = append(coefs, p-1, p, p+1, p*9/10, p*5)
+		}
+		for i := range 64 {
+			coefs = append(coefs, 1<<i-1, 1<<i, 1<<i+1)
+		}
+		for _, coef := range coefs {
+			for scale := MinScale; scale <= MaxScale; scale++ {
+				for _, neg := range []bool{false, true} {
+					d, err := newSafe(neg, coef, scale)
+					if err != nil {
+						continue
+					}
+					got := d.String()
+					want := stringRef(neg, coef, scale)
+					if got != want {
+						t.Errorf("newDecimal(%v, %v, %v).String() = %q, want %q", neg, coef, scale, got, want)
+					}
+				}
+			}
+		}
+	})
+}
+
+// stringRef is a straightforward reference implementation of [Decimal.String].
+func stringRef(neg bool, coef fint, scale int) string {
+	s := strconv.FormatUint(uint64(coef), 10)
+	if len(s) <= scale {
+		s = strings.Repeat("0", scale-len(s)+1) + s
+	}
+	if scale > 0 {
+		s = s[:len(s)-scale] + "." + s[len(s)-scale:]
+	}
+	if neg && coef != 0 {
+		s = "-" + s
+	}
+	return s
 }
 
 func TestDecimal_Float64(t *testing.T) {
@@ -6467,6 +6508,39 @@ func FuzzDecimal_String_Parse(f *testing.F) {
 
 			if got.CmpTotal(want) != 0 {
 				t.Errorf("Parse(%q) = %v, want %v", s, got, want)
+				return
+			}
+		},
+	)
+}
+
+func FuzzDecimal_String(f *testing.F) {
+	for _, d := range corpus {
+		f.Add(d.neg, d.scale, d.coef)
+	}
+
+	f.Fuzz(
+		func(t *testing.T, neg bool, scale int, coef uint64) {
+			d, err := newSafe(neg, fint(coef), scale)
+			if err != nil {
+				t.Skip()
+				return
+			}
+
+			got := d.String()
+			want := stringRef(neg, fint(coef), scale)
+			if got != want {
+				t.Errorf("newDecimal(%v, %v, %v).String() = %q, want %q", neg, coef, scale, got, want)
+				return
+			}
+
+			text, err := d.AppendText([]byte("prefix"))
+			if err != nil {
+				t.Errorf("AppendText() failed: %v", err)
+				return
+			}
+			if string(text) != "prefix"+want {
+				t.Errorf("AppendText(\"prefix\") = %q, want %q", text, "prefix"+want)
 				return
 			}
 		},
