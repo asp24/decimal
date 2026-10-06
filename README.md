@@ -14,8 +14,8 @@ To migrate, replace the `github.com/govalues/decimal` import path with `github.c
 
 ## Key Features
 
-- **BSON, JSON, XML, SQL** - Implements the necessary interfaces for direct compatibility
-  with the [mongo-driver/bson], [encoding/json], [encoding/xml], and [database/sql] packages.
+- **BSON, JSON, XML, SQL, GraphQL** - Implements the necessary interfaces for direct compatibility
+  with the [mongo-driver/bson], [encoding/json], [encoding/xml], [database/sql], and [gqlgen] packages.
 - **No Heap Allocations** - Addition, subtraction, multiplication, division,
   square root and parsing avoid heap allocations, preventing garbage collector impact.
 - **Correct Rounding** - For all methods, the result is the one that would
@@ -236,6 +236,7 @@ The benchmark results shown in the table are provided for informational purposes
 [encoding/json]: https://pkg.go.dev/encoding/json#Unmarshaler
 [encoding/xml]: https://pkg.go.dev/encoding#TextUnmarshaler
 [database/sql]: https://pkg.go.dev/database/sql#Scanner
+[gqlgen]: https://pkg.go.dev/github.com/99designs/gqlgen/graphql#Unmarshaler
 [specification]: https://speleotrove.com/decimal/telcoSpec.html
 [fuzz testing]: https://github.com/govalues/decimal-tests
 [govalues/decimal]: https://github.com/govalues/decimal

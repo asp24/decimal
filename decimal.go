@@ -3,9 +3,11 @@ package decimal
 import (
 	"database/sql/driver"
 	"encoding/binary"
+	"encoding/json"
 	"encoding/json/jsontext"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"math/big"
 	"math/bits"
@@ -3414,6 +3416,50 @@ func (d Decimal) MarshalText() ([]byte, error) {
 	return d.bytes(), nil
 }
 
+// UnmarshalGQL implements the [graphql.Unmarshaler] interface.
+// UnmarshalGQL supports the following types: string, [json.Number], int64, int, and float64.
+// Values of type float64 come from GraphQL float literals and may already be rounded,
+// use strings or variables to preserve precision.
+// UnmarshalGQL does not support null values, use [NullDecimal] or *[Decimal] instead.
+// See also constructor [Parse].
+//
+// [graphql.Unmarshaler]: https://pkg.go.dev/github.com/99designs/gqlgen/graphql#Unmarshaler
+func (d *Decimal) UnmarshalGQL(v any) error {
+	var err error
+	switch v := v.(type) {
+	case string:
+		*d, err = Parse(v)
+	case json.Number:
+		// gqlgen decodes numeric variables using json.Decoder.UseNumber
+		*d, err = Parse(string(v))
+	case int64:
+		*d, err = New(v, 0)
+	case int:
+		*d, err = New(int64(v), 0)
+	case float64:
+		*d, err = NewFromFloat64(v)
+	case nil:
+		err = fmt.Errorf("%T does not support null values, use %T or *%T", Decimal{}, NullDecimal{}, Decimal{})
+	default:
+		err = fmt.Errorf("type %T is not supported", v)
+	}
+	if err != nil {
+		err = fmt.Errorf("unmarshaling %T to %T: %w", v, Decimal{}, err)
+	}
+	return err
+}
+
+// MarshalGQL implements the [graphql.Marshaler] interface.
+// MarshalGQL always writes a [numeric string].
+// See also method [Decimal.MarshalJSON].
+//
+// [numeric string]: https://datatracker.ietf.org/doc/html/rfc8259#section-7
+// [graphql.Marshaler]: https://pkg.go.dev/github.com/99designs/gqlgen/graphql#Marshaler
+func (d Decimal) MarshalGQL(w io.Writer) {
+	text, _ := d.MarshalJSON()
+	_, _ = w.Write(text) // graphql.Marshaler cannot report write errors
+}
+
 // UnmarshalBinary implements the [encoding.BinaryUnmarshaler] interface.
 // UnmarshalBinary supports only numeric strings.
 // See also constructor [Parse].
@@ -3719,6 +3765,32 @@ func (n NullDecimal) MarshalJSONTo(enc *jsontext.Encoder) error {
 		return enc.WriteToken(jsontext.Null)
 	}
 	return n.Decimal.MarshalJSONTo(enc)
+}
+
+// UnmarshalGQL implements the [graphql.Unmarshaler] interface.
+// See also method [Decimal.UnmarshalGQL].
+//
+// [graphql.Unmarshaler]: https://pkg.go.dev/github.com/99designs/gqlgen/graphql#Unmarshaler
+func (n *NullDecimal) UnmarshalGQL(v any) error {
+	if v == nil {
+		n.Decimal = Decimal{}
+		n.Valid = false
+		return nil
+	}
+	n.Valid = true
+	return n.Decimal.UnmarshalGQL(v)
+}
+
+// MarshalGQL implements the [graphql.Marshaler] interface.
+// See also method [Decimal.MarshalGQL].
+//
+// [graphql.Marshaler]: https://pkg.go.dev/github.com/99designs/gqlgen/graphql#Marshaler
+func (n NullDecimal) MarshalGQL(w io.Writer) {
+	if !n.Valid {
+		_, _ = io.WriteString(w, "null") // graphql.Marshaler cannot report write errors
+		return
+	}
+	n.Decimal.MarshalGQL(w)
 }
 
 // UnmarshalBSONValue implements the [v2/bson.ValueUnmarshaler] interface.

@@ -263,6 +263,23 @@ Below are the reasons for these preferences:
     To prevent automatic rescaling, consider using VARCHAR(22), which accurately
     preserves the scale of decimals.
 
+F. GraphQL
+
+The package integrates with [gqlgen] via the implementation of
+[graphql.Marshaler] and [graphql.Unmarshaler] interfaces.
+No additional code is needed, just bind the scalar in gqlgen.yml:
+
+	models:
+	  Decimal:
+	    model:
+	      - github.com/asp24/decimal.Decimal
+
+This package marshals decimals as quoted strings, ensuring the preservation of
+the exact numerical value.
+Input values can be strings or numbers.
+Prefer strings or variables over float literals in queries, since
+the GraphQL parser converts float literals to binary floating-point numbers.
+
 # Mathematical Context
 
 Unlike many other decimal libraries, this package does not provide
@@ -299,5 +316,8 @@ subnormal numbers.
 [Decimal128]: https://github.com/mongodb/specifications/blob/master/source/bson-decimal128/decimal128.md
 [v2/bson.ValueMarshaler]: https://pkg.go.dev/go.mongodb.org/mongo-driver/v2/bson#ValueMarshaler
 [v2/bson.ValueUnmarshaler]: https://pkg.go.dev/go.mongodb.org/mongo-driver/v2/bson#ValueUnmarshaler
+[gqlgen]: https://gqlgen.com
+[graphql.Marshaler]: https://pkg.go.dev/github.com/99designs/gqlgen/graphql#Marshaler
+[graphql.Unmarshaler]: https://pkg.go.dev/github.com/99designs/gqlgen/graphql#Unmarshaler
 */
 package decimal
