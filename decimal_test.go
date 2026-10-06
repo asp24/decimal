@@ -1334,6 +1334,26 @@ func TestDecimal_Float64(t *testing.T) {
 	}
 }
 
+func BenchmarkDecimal_Float64(b *testing.B) {
+	benchmarks := []string{
+		"0",
+		"1",
+		"-1",
+		"0.0000000000000000001",
+		"123.456",
+		"9999999999999999999",
+		"-9999999999999999999",
+	}
+	for _, s := range benchmarks {
+		d := MustParse(s)
+		b.Run(s, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				d.Float64()
+			}
+		})
+	}
+}
+
 func TestDecimal_Int64(t *testing.T) {
 	tests := []struct {
 		d                   string

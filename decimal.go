@@ -278,10 +278,9 @@ func NewFromFloat64(f float64) (Decimal, error) {
 //
 // [rounding half to even]: https://en.wikipedia.org/wiki/Rounding#Rounding_half_to_even
 func (d Decimal) Float64() (f float64, ok bool) {
-	s := d.String()
-	f, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return 0, false
+	f = float64(d.coef) / float64(pow10[d.scale])
+	if d.neg {
+		f = -f
 	}
 	return f, true
 }
