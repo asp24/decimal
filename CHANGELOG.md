@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Bumped go version to 1.27.
+
 ### Fixed
 
 - `Decimal.Format` corrupted non-ASCII verbs in the `%!verb(decimal.Decimal=...)` error output.

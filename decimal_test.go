@@ -57,15 +57,14 @@ func TestDecimal_Interfaces(t *testing.T) {
 	if !ok {
 		t.Errorf("%T does not implement encoding.BinaryMarshaler", d)
 	}
-	// Uncomment when Go 1.24 is minimum supported version.
-	// _, ok = d.(encoding.TextAppender)
-	// if !ok {
-	// 	t.Errorf("%T does not implement encoding.TextAppender", d)
-	// }
-	// _, ok = d.(encoding.BinaryAppender)
-	// if !ok {
-	// 	t.Errorf("%T does not implement encoding.BinaryAppender", d)
-	// }
+	_, ok = d.(encoding.TextAppender)
+	if !ok {
+		t.Errorf("%T does not implement encoding.TextAppender", d)
+	}
+	_, ok = d.(encoding.BinaryAppender)
+	if !ok {
+		t.Errorf("%T does not implement encoding.BinaryAppender", d)
+	}
 	_, ok = d.(driver.Valuer)
 	if !ok {
 		t.Errorf("%T does not implement driver.Valuer", d)
