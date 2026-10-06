@@ -16,8 +16,8 @@ To migrate, replace the `github.com/govalues/decimal` import path with `github.c
 
 - **BSON, JSON, XML, SQL** - Implements the necessary interfaces for direct compatibility
   with the [mongo-driver/bson], [encoding/json], [encoding/xml], and [database/sql] packages.
-- **No Heap Allocations** - Optimized to avoid heap allocations,
-  preventing garbage collector impact during arithmetic operations.
+- **No Heap Allocations** - Addition, subtraction, multiplication, exact division
+  and parsing avoid heap allocations, preventing garbage collector impact.
 - **Correct Rounding** - For all methods, the result is the one that would
   be obtained if the true mathematical value were rounded to 19 digits of
   precision using the [half-to-even] rounding (a.k.a. "banker's rounding").
@@ -118,49 +118,97 @@ For examples related to financial calculations, see the `money` package
 
 Comparison with other popular packages:
 
-| Feature              | govalues  | [cockroachdb/apd] v3.2.1 | [shopspring/decimal] v1.4.0 |
-| -------------------- | --------- | ------------------------ | --------------------------- |
-| Correctly Rounded    | Yes       | No                       | No                          |
-| Speed                | High      | Medium                   | Low[^reason]                |
-| Heap Allocations     | No        | Medium                   | High                        |
-| Precision            | 19 digits | Arbitrary                | Arbitrary                   |
-| Panic Free           | Yes       | Yes                      | No[^divzero]                |
-| Mutability           | Immutable | Mutable[^reason]         | Immutable                   |
-| Mathematical Context | Implicit  | Explicit                 | Implicit                    |
+| Feature              | decimal   | [apd] v3.2.3 | [shopspring] v1.5.0 | [udecimal] v1.10.1  | [alpacadecimal] v0.0.9    | [decimal128] v1.5.0 | [ericlagergren][^abandoned] |
+| -------------------- | --------- | ------------ | ------------------- | ------------------- | ------------------------- | ------------------- | --------------------------- |
+| Correctly Rounded    | Yes       | No           | No                  | No[^truncate]       | No[^halfup]               | Partly[^partly]     | No[^erl]                    |
+| Precision            | 19 digits | Arbitrary    | Arbitrary           | 19 decimal places   | 12 decimal places[^fast]  | 34 digits           | Arbitrary                   |
+| Heap Allocations     | Low       | Medium       | High                | No                  | No[^fast]                 | No                  | Medium                      |
+| Panic Free           | Yes       | Yes          | No[^divzero]        | Yes                 | No[^divzero]              | Yes[^nan]           | Yes                         |
+| Mutability           | Immutable | Mutable      | Immutable           | Immutable           | Immutable                 | Immutable           | Mutable                     |
+| Mathematical Context | Implicit  | Explicit     | Implicit            | Implicit            | Implicit                  | Implicit            | Explicit                    |
+| Sqrt, Exp, Log       | Yes       | Yes          | Exp, Log            | Sqrt                | Exp                       | Yes                 | Yes                         |
 
-[^reason]: decimal package was created simply because [shopspring/decimal] was
-too slow and [cockroachdb/apd] was mutable.
+[^truncate]: [udecimal] truncates the results of multiplication, division and
+square root to 19 decimal places, the rounding mode cannot be changed.
 
-[^divzero]: [shopspring/decimal] panics on division by zero.
+[^halfup]: [alpacadecimal] rounds quotients half away from zero to a fixed number
+of decimal places, the rounding mode cannot be changed.
+
+[^partly]: [decimal128] correctly rounds addition, subtraction, multiplication and
+division; mathematical functions are computed with extra precision, but without a guarantee.
+
+[^erl]: [ericlagergren] occasionally rounds results of `Exp` and `Pow` incorrectly,
+for example, exp(-1.28961) = 0.2753781596322221254 instead of 0.2753781596322221255.
+
+[^fast]: [alpacadecimal] uses a fast allocation-free path for values with up to
+12 decimal places and absolute value up to 9,223,372; other values fall back to [shopspring].
+
+[^divzero]: Panics on division by zero.
+
+[^nan]: [decimal128] returns NaN or infinity instead of errors.
+
+[^abandoned]: [ericlagergren] has not been updated since April 2024.
 
 ### Benchmarks
 
-```text
-goos: linux
-goarch: amd64
-pkg: github.com/govalues/decimal-tests
-cpu: AMD Ryzen 7 3700C  with Radeon Vega Mobile Gfx 
-```
+Median time per operation (lower is better, the best result is in bold):
 
-| Test Case | Expression            | govalues | [cockroachdb/apd] v3.2.1 | [shopspring/decimal] v1.4.0 | govalues vs cockroachdb | govalues vs shopspring |
-| --------- | --------------------- | -------: | -----------------------: | --------------------------: | ----------------------: | ---------------------: |
-| Add       | 5 + 6                 |   16.06n |                   74.88n |                     140.90n |                +366.22% |               +777.33% |
-| Mul       | 2 * 3                 |   16.93n |                   62.20n |                     146.00n |                +267.40% |               +762.37% |
-| Quo       | 2 / 4 (exact)         |   59.52n |                  176.95n |                     657.40n |                +197.30% |              +1004.50% |
-| Quo       | 2 / 3 (inexact)       |  391.60n |                  976.80n |                    2962.50n |                +149.39% |               +656.42% |
-| PowInt    | 1.1^60                |  950.90n |                 3302.50n |                    4599.50n |                +247.32% |               +383.73% |
-| PowInt    | 1.01^600              |    3.45µ |                   10.67µ |                      18.67µ |                +209.04% |               +440.89% |
-| PowInt    | 1.001^6000            |    5.94µ |                   20.50µ |                     722.22µ |                +244.88% |             +12052.44% |
-| Sqrt      | √2                    |    3.40µ |                    4.96µ |                    2101.86µ |                 +46.00% |             +61755.71% |
-| Exp       | exp(0.5)              |    8.35µ |                   39.28µ |                      20.06µ |                +370.58% |               +140.32% |
-| Log       | ln(0.5)               |   54.89µ |                  129.01µ |                     151.55µ |                +135.03% |               +176.10% |
-| Parse     | 1                     |   16.52n |                   76.30n |                     136.55n |                +362.00% |               +726.82% |
-| Parse     | 123.456               |   47.37n |                  176.90n |                     242.60n |                +273.44% |               +412.14% |
-| Parse     | 123456789.1234567890  |   85.49n |                  224.15n |                     497.95n |                +162.19% |               +482.47% |
-| String    | 1                     |    5.11n |                   19.57n |                     198.25n |                +283.21% |              +3783.07% |
-| String    | 123.456               |   35.78n |                   77.12n |                     228.85n |                +115.52% |               +539.51% |
-| String    | 123456789.1234567890  |   70.72n |                  239.10n |                     337.25n |                +238.12% |               +376.91% |
-| Telco     | (see [specification]) |  137.00n |                  969.40n |                    3981.00n |                +607.33% |              +2804.78% |
+| Test Case | Expression            | decimal    | [apd]  | [shopspring] | [udecimal] | [alpacadecimal] | [decimal128] | [ericlagergren] |
+| --------- | --------------------- | ---------: | -----: | -----------: | ---------: | --------------: | -----------: | --------------: |
+| Add       | 5 + 6                 |       9.5n |  78.4n |        94.8n |      11.8n |        **4.0n** |        31.8n |            148n |
+| Mul       | 2 * 3                 |       9.6n |  78.9n |         102n |      14.1n |        **6.3n** |        31.9n |            154n |
+| Quo       | 2 / 4 (exact)         |      26.1n |   128n |         167n |      15.8n |        **8.0n** |        32.9n |            226n |
+| Quo       | 2 / 3 (inexact)       |       269n |   139n |         230n |  **15.5n** |            206n |        81.0n |            257n |
+| PowInt    | 1.1^60                |       529n |  1.12µ |    **163n**  |       449n |            815n |        13.4µ |            968n |
+| PowInt    | 1.01^600              |      1.63µ |  3.76µ |    **1.18µ** |      3.32µ |           12.7µ |        21.9µ |           2.28µ |
+| PowInt    | 1.001^6000            |  **2.90µ** |  7.99µ |        47.9µ |     107.2µ |          406.1µ |        21.5µ |           4.00µ |
+| Sqrt      | √2                    |      1.38µ |  1.20µ |            — |  **45.2n** |               — |        23.1µ |            846n |
+| Exp       | exp(0.5)              |      6.97µ |  16.5µ |    **5.00µ** |          — |           12.9µ |        13.1µ |           11.1µ |
+| Log       | ln(0.5)               |      51.1µ |  52.5µ |        34.8µ |          — |               — |     **842n** |           27.9µ |
+| Parse     | 1                     |       6.4n |  44.7n |        27.7n |       6.6n |        **3.5n** |        21.0n |           84.0n |
+| Parse     | 123.456               |       8.6n |  90.5n |        35.0n |       9.5n |        **5.9n** |        25.4n |            106n |
+| Parse     | 123456789.1234567890  |  **13.9n** |   104n |         174n |      19.6n |            202n |        34.2n |            164n |
+| String    | 1                     |       3.5n |  10.0n |        53.8n |       9.0n |        **1.7n** |        21.2n |           81.3n |
+| String    | 123.456               |  **15.7n** |  24.2n |        84.9n |      23.1n |           23.5n |        45.4n |           90.9n |
+| String    | 123456789.1234567890  |  **28.6n** |  81.4n |         109n |      37.7n |            103n |        49.3n |           94.3n |
+| Telco     | (see [specification]) |  **44.5n** |   317n |         395n |      51.0n |            410n |         220n |            105n |
+
+Heap allocations per operation:
+
+| Test Case | Expression            | decimal | [apd] | [shopspring] | [udecimal] | [alpacadecimal] | [decimal128] | [ericlagergren] |
+| --------- | --------------------- | ------: | ----: | -----------: | ---------: | --------------: | -----------: | --------------: |
+| Add       | 5 + 6                 |       0 |     3 |            6 |          0 |               0 |            0 |               3 |
+| Mul       | 2 * 3                 |       0 |     3 |            6 |          0 |               0 |            0 |               3 |
+| Quo       | 2 / 4 (exact)         |       0 |     3 |            8 |          0 |               0 |            0 |               6 |
+| Quo       | 2 / 3 (inexact)       |       2 |     3 |           11 |          0 |              10 |            0 |               7 |
+| PowInt    | 1.1^60                |       2 |    12 |            5 |         12 |              12 |            0 |              15 |
+| PowInt    | 1.01^600              |      16 |    58 |           10 |         22 |              16 |            0 |              39 |
+| PowInt    | 1.001^6000            |      30 |   130 |           16 |         34 |              22 |            0 |              69 |
+| Sqrt      | √2                    |      16 |     9 |            — |          0 |               — |            0 |              12 |
+| Exp       | exp(0.5)              |      82 |   211 |          210 |          — |             281 |            0 |             130 |
+| Log       | ln(0.5)               |     554 |   773 |          690 |          — |               — |            0 |             381 |
+| Parse     | 1                     |       0 |     1 |            2 |          0 |               0 |            0 |               2 |
+| Parse     | 123.456               |       0 |     2 |            2 |          0 |               0 |            0 |               2 |
+| Parse     | 123456789.1234567890  |       0 |     2 |            4 |          0 |               5 |            0 |               2 |
+| String    | 1                     |       0 |     0 |            1 |          0 |               0 |            1 |               4 |
+| String    | 123.456               |       1 |     1 |            2 |          1 |               1 |            2 |               4 |
+| String    | 123456789.1234567890  |       1 |     3 |            2 |          1 |               2 |            1 |               4 |
+| Telco     | (see [specification]) |       0 |     0 |           20 |          0 |              27 |            0 |               0 |
+
+Every package computes inexact results with at least 19 significant digits
+(19 decimal places for [udecimal], [shopspring] and [alpacadecimal]), and
+every result is verified against a reference value before measuring.
+[shopspring] and [alpacadecimal] compute integer powers exactly, with all 61 digits of 1.1^60.
+[decimal128] computes integer powers as exp(y·ln(x)).
+
+The results were obtained with Go 1.27.1 on AMD Ryzen AI MAX+ 395, one physical core per benchmark.
+To reproduce them, run:
+
+```bash
+cd bench
+go test -bench . -count 10 > bench.txt
+benchstat -col /mod bench.txt
+```
 
 The benchmark results shown in the table are provided for informational purposes only and may vary depending on your specific use case.
 
@@ -176,6 +224,12 @@ The benchmark results shown in the table are provided for informational purposes
 [licenseb]: https://img.shields.io/github/license/asp24/decimal?color=blue
 [cockroachdb/apd]: https://pkg.go.dev/github.com/cockroachdb/apd
 [shopspring/decimal]: https://pkg.go.dev/github.com/shopspring/decimal
+[apd]: https://pkg.go.dev/github.com/cockroachdb/apd/v3
+[shopspring]: https://pkg.go.dev/github.com/shopspring/decimal
+[udecimal]: https://pkg.go.dev/github.com/quagmt/udecimal
+[alpacadecimal]: https://pkg.go.dev/github.com/alpacahq/alpacadecimal
+[decimal128]: https://pkg.go.dev/github.com/woodsbury/decimal128
+[ericlagergren]: https://pkg.go.dev/github.com/ericlagergren/decimal
 [mongo-driver/bson]: https://pkg.go.dev/go.mongodb.org/mongo-driver/v2/bson#ValueUnmarshaler
 [encoding/json]: https://pkg.go.dev/encoding/json#Unmarshaler
 [encoding/xml]: https://pkg.go.dev/encoding#TextUnmarshaler
