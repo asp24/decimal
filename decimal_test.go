@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"math/rand/v2"
+	"strings"
 	"testing"
 	"unsafe"
 )
@@ -6315,6 +6317,65 @@ var corpus = []struct {
 	{true, 19, 1},
 	{true, 19, 3},
 	{true, 19, 9999999999999999999},
+}
+
+func TestParseFint(t *testing.T) {
+	t.Run("fast path", func(t *testing.T) {
+		tests := []string{
+			"0", "-0", "+0", "1.", ".1", "-.1", "00.00", "-1234.56", "0.000123",
+			"9999999999999999999", "-0.9999999999999999999", "1234567890.123456789",
+			"00000000000000000000000000000000000001", "0.0000000000000000012",
+			"0.00000000000000000000000000000000000001",
+			"1e5", "1E-5", "-1.23e+5", ".5e1", "1.e5", "0e5", "1e0000000000005",
+			"1e-330", "9.999999999999999999e18", "1e-19", "5e-20", "15e-20", "25e-21",
+		}
+		for _, tt := range tests {
+			if _, err := parseFint([]byte(tt), 0); err != nil {
+				t.Errorf("parseFint(%q) failed: %v", tt, err)
+			}
+		}
+	})
+
+	t.Run("fallback", func(t *testing.T) {
+		tests := []string{
+			"", "+", "-", ".", "-.", "..", "1..", "1.2.3", " 1", "1 ", "1_0", "0x10", "/", ":", "1\x00",
+			"99999999999999999999", "18446744073709551616", "0.12345678901234567890123",
+			"1e331", "1e-331", "0e999", "1.5e", "1.5e+", "1.5e-", "e5", ".e5", "1e2.5", "1ee2",
+			"9.999999999999999999e19", "12345678901234567890e-5",
+		}
+		for _, tt := range tests {
+			if _, err := parseFint([]byte(tt), 0); err == nil {
+				t.Errorf("parseFint(%q) did not fail", tt)
+			}
+		}
+	})
+
+	t.Run("consistency", func(t *testing.T) {
+		check := func(text string, scale int) {
+			t.Helper()
+			got, err := parseFint([]byte(text), scale)
+			if err != nil {
+				return
+			}
+			want, err := parseBint([]byte(text), scale)
+			if err != nil {
+				t.Fatalf("parseBint(%q, %v) failed: %v, whereas parseFint(%q, %v) = %q", text, scale, err, text, scale, got)
+			}
+			if got != want {
+				t.Fatalf("parseBint(%q, %v) = %q, whereas parseFint(%q, %v) = %q", text, scale, want, text, scale, got)
+			}
+		}
+		r := rand.New(rand.NewPCG(1, 2))
+		const alphabet = "0123456789012345678901234567890123456789.-+eE/:"
+		var sb strings.Builder
+		for range 1_000_000 {
+			sb.Reset()
+			for range r.IntN(26) {
+				sb.WriteByte(alphabet[r.IntN(len(alphabet))])
+			}
+			check(sb.String(), r.IntN(MaxScale+1))
+		}
+	})
 }
 
 func FuzzParse(f *testing.F) {

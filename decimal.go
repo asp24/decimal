@@ -359,61 +359,122 @@ func parseExact(text []byte, scale int) (Decimal, error) {
 }
 
 // parseFint parses a decimal string using uint64 arithmetic.
-// parseFint does not support exponential notation to make it as fast as possible.
+// It accumulates digits without per-digit overflow checks, since any number
+// of at most [MaxPrec] significant digits fits into uint64.
+// parseFint returns an error for inputs that do not fit into uint64
+// or are not valid, and the caller is expected to fall back to [parseBint],
+// which handles all cases and produces descriptive errors.
 //
 //nolint:gocyclo
 func parseFint(text []byte, minScale int) (Decimal, error) {
-	var pos int
-	width := len(text)
+	pos, width := 0, len(text)
 
 	// Sign
 	var neg bool
-	switch {
-	case pos == width:
-		// skip
-	case text[pos] == '-':
-		neg = true
-		pos++
-	case text[pos] == '+':
-		pos++
+	if width > 0 {
+		switch text[0] {
+		case '-':
+			neg = true
+			pos++
+		case '+':
+			pos++
+		}
 	}
-
-	// Coefficient
-	var coef fint
-	var scale int
-	var hasCoef, ok bool
 
 	// Integer
-	for pos < width && text[pos] >= '0' && text[pos] <= '9' {
-		coef, ok = coef.fsa(1, text[pos]-'0')
-		if !ok {
-			return Decimal{}, errDecimalOverflow
+	var coef fint
+	start := pos
+	pos = skipZeros(text, pos)
+	sig := pos
+	for ; pos < width; pos++ {
+		d := text[pos] - '0'
+		if d > 9 {
+			break
 		}
-		pos++
-		hasCoef = true
+		coef = coef*10 + fint(d)
 	}
+	prec := pos - sig     // number of significant digits
+	digits := pos - start // number of all digits
 
 	// Fraction
+	var scale int
 	if pos < width && text[pos] == '.' {
 		pos++
-		for pos < width && text[pos] >= '0' && text[pos] <= '9' {
-			coef, ok = coef.fsa(1, text[pos]-'0')
-			if !ok {
-				return Decimal{}, errDecimalOverflow
-			}
-			pos++
-			scale++
-			hasCoef = true
+		start = pos
+		if coef == 0 {
+			pos = skipZeros(text, pos)
 		}
+		sig = pos
+		for ; pos < width; pos++ {
+			d := text[pos] - '0'
+			if d > 9 {
+				break
+			}
+			coef = coef*10 + fint(d)
+		}
+		scale = pos - start
+		prec += pos - sig
+		digits += scale
 	}
 
-	if pos != width {
-		return Decimal{}, fmt.Errorf("%w: unexpected character %q", errInvalidDecimal, text[pos])
+	// Exponent
+	if pos < width && text[pos]|0x20 == 'e' {
+		exp, ok := parseExp(text, pos+1)
+		if !ok {
+			return Decimal{}, errInvalidDecimal
+		}
+		scale -= exp
+		pos = width
 	}
-	if !hasCoef {
-		return Decimal{}, fmt.Errorf("%w: no coefficient", errInvalidDecimal)
+
+	switch {
+	case pos != width || digits == 0:
+		return Decimal{}, errInvalidDecimal
+	case prec > MaxPrec:
+		return Decimal{}, errDecimalOverflow
 	}
 	return newFromFint(neg, coef, scale, minScale)
+}
+
+// skipZeros returns the position of the first non-zero character at or after pos.
+func skipZeros(text []byte, pos int) int {
+	for pos < len(text) && text[pos] == '0' {
+		pos++
+	}
+	return pos
+}
+
+// parseExp parses the exponent that follows 'e' or 'E' at position pos.
+// The exponent must end the text and its absolute value must not exceed 330.
+func parseExp(text []byte, pos int) (int, bool) {
+	var neg bool
+	if pos < len(text) {
+		switch text[pos] {
+		case '-':
+			neg = true
+			pos++
+		case '+':
+			pos++
+		}
+	}
+	if pos == len(text) {
+		return 0, false
+	}
+	var exp int
+	for ; pos < len(text); pos++ {
+		d := text[pos] - '0'
+		if d > 9 {
+			return 0, false
+		}
+		exp = exp*10 + int(d)
+		if exp > 330 {
+			return 0, false
+		}
+	}
+	if neg {
+		exp = -exp
+	}
+	return exp, true
 }
 
 // parseBint parses a decimal string using *big.Int arithmetic.
